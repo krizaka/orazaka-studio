@@ -1,0 +1,122 @@
+# ==============================================================================
+# Orazaka Studio Service — application configuration (ADR-034)
+# ------------------------------------------------------------------------------
+# Internal service on :8096, reached by the web client and the admin console
+# through the edge, and by nobody over a direct browser connection.
+#
+# NO STUDIO LIVES HERE. Studios, blueprints, run limits and fan-out caps are ROWS
+# in orazaka_studio_db, admin-editable live (AGENTS.md §4, ADR-027/031). A Studio
+# in yaml would make adding a profession a deploy, which is the whole business
+# model inverted. This file carries wiring only: ports, datasource, broker.
+#
+# NO spring.datasource here — the connection is built by DataSourceConfig from the
+# orazaka.studio-service.datasource block below, so the shared .env's
+# SPRING_DATASOURCE_* (app database) can never hijack this service's pool.
+# ==============================================================================
+
+spring:
+  application:
+    name: orazaka-studio-service
+  threads:
+    virtual:
+      enabled: true
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:${SPRING_RABBITMQ_HOST:localhost}}
+    port: ${RABBITMQ_PORT:${SPRING_RABBITMQ_PORT:5672}}
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASS:guest}
+    template:
+      observation-enabled: true
+    listener:
+      simple:
+        observation-enabled: true
+        acknowledge-mode: auto
+        default-requeue-rejected: false
+        # Exponential backoff (AGENTS.md §6); exhausted retries dead-letter to <queue>.dlq.
+        retry:
+          enabled: true
+          max-attempts: ${RABBITMQ_RETRY_MAX_ATTEMPTS:3}
+          initial-interval: ${RABBITMQ_RETRY_INITIAL_INTERVAL:1s}
+          multiplier: 2.0
+          max-interval: 10s
+
+server:
+  port: ${STUDIO_PORT:8096}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info
+  endpoint:
+    health:
+      show-details: always
+  otlp:
+    tracing:
+      endpoint: ${OTEL_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+
+logging:
+  file:
+    name: ${STUDIO_LOG:var/logs/studio-service.log}
+  logback:
+    rollingpolicy:
+      max-file-size: 1MB
+      total-size-cap: 10MB
+      max-history: 7
+  level:
+    com.orazaka.studioservice: DEBUG
+    org.springframework.amqp: INFO
+
+# ── Orazaka — service-owned wiring ────────────────────────────────────────────
+orazaka:
+  identity:
+    jwt:
+      # Contract copy of the shared HS256 secret the identity service signs with; every
+      # host validates locally, so a catalogue read costs no per-request identity hop.
+      secret: ${IDENTITY_JWT_SECRET:orazaka-local-dev-identity-jwt-secret-256bit!}
+  studio-service:
+    datasource:
+      url: ${STUDIO_DB_URL:jdbc:postgresql://localhost:5432/orazaka_studio_db}
+      username: ${STUDIO_DB_USER:orazaka_studio}
+      password: ${STUDIO_DB_PASSWORD}
+    sweeper:
+      # How often non-terminal runs are checked. The per-step timeout itself is a DB row
+      # (run.step-timeout-seconds) — this is only the poll interval, which is bootstrap wiring.
+      interval: ${STUDIO_SWEEPER_INTERVAL:60000}
+    # The asset store encrypts what it holds: a per-file data key wrapped by a master key that
+    # lives outside the repository and outside .env (ADR-054). This is the declaration ADR-051 §8
+    # required, and it is now true — so a SENSITIVE pack installs here and on a hosted deployment
+    # that makes the same claim. It still DEFAULTS to false: a deployment that has answered
+    # nothing is treated as one storing documents in the clear, which is what it is.
+    assets:
+      encrypted-at-rest: ${ASSETS_ENCRYPTED_AT_REST:true}
+      deployment: ${ASSETS_DEPLOYMENT:LOCAL}
+    packs:
+      # Where this deployment's packs come from (ADR-049) — the SAME declaration the CLI reads for
+      # `orazaka pack list`, so an operator who adds a source sees it in both places. A shipped
+      # bundle the catalogue does not carry is installed at startup (ADR-068): before this, a fresh
+      # environment received the pack files and no Studios, and the only path between them was an
+      # operator remembering a command.
+      sources: ${ORAZAKA_PACKS_SOURCES:orazaka-packs}
+      # How long to wait before retrying a bundle whose install failed because a service it needs
+      # is still starting. Not a poll: the bootstrap stops as soon as one pass finds nothing left.
+      bootstrap-interval: ${STUDIO_PACK_BOOTSTRAP_INTERVAL:30000}
+    job-plane:
+      # Where a step's capability route is read from (ADR-037). ONLY the address and the staleness
+      # bound: the routing table itself is orazaka_capabilities, owned by the job service. A
+      # routing key here would be the second copy this whole change removed.
+      base-url: ${JOB_SERVICE_INTERNAL_URL:http://localhost:8090}
+      cache-ttl: ${STUDIO_JOB_PLANE_CACHE_TTL:60s}
+  billing:
+    # Producer-side billing wiring (orazaka-billing-client): a run takes one hold.
+    # With billing disabled the NoOp adapter is selected and no call site branches.
+    enabled: ${BILLING_ENABLED:false}
+    base-url: ${BILLING_INTERNAL_URL:http://localhost:8095}
+    # Mints the SERVICE token /internal/v1/billing requires (ADR-035). It was absent from
+    # every consumer, so BILLING_ENABLED=true crashed each of them at startup with "the
+    # shared identity secret is required" — billing had never been switched on anywhere.
+    service-secret: ${IDENTITY_JWT_SECRET:orazaka-local-dev-identity-jwt-secret-256bit!}

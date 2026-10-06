@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- The relativePath resolves inside the Orazaka workspace (krizaka/orazaka); a standalone
+         clone falls back to the orazaka-parent published on GitHub Packages. -->
+    <parent>
+        <groupId>com.orazaka</groupId>
+        <artifactId>orazaka-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../../../orazaka-libs/orazaka-build/orazaka-parent/pom.xml</relativePath>
+    </parent>
+
+    <artifactId>orazaka-studio</artifactId>
+    <packaging>pom</packaging>
+    <name>orazaka-studio</name>
+    <description>Studio &amp; pack marketplace: pack catalogue, studio blueprints, installations and saga-driven runs, with its contract (studio-api) and HTTP client (studio-client).</description>
+
+    <url>https://github.com/krizaka/orazaka-studio</url>
+
+    <scm>
+        <url>https://github.com/krizaka/orazaka-studio</url>
+        <connection>scm:git:https://github.com/krizaka/orazaka-studio.git</connection>
+        <developerConnection>scm:git:git@github.com:krizaka/orazaka-studio.git</developerConnection>
+    </scm>
+
+    <properties>
+        <!-- GitHub Packages repository the modules below are published to (orazaka-parent). -->
+        <orazaka.repository>orazaka-studio</orazaka.repository>
+    </properties>
+
+    <modules>
+        <module>orazaka-studio-api</module>
+        <module>orazaka-studio-client</module>
+        <module>orazaka-studio-service</module>
+    </modules>
+</project>

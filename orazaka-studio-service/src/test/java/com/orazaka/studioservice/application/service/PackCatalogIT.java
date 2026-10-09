@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.krizaka.test.container.ServiceRoles;
 import com.orazaka.billing.domain.model.PackPrice;
 import com.orazaka.billing.domain.port.PackPricingClient;
 import com.orazaka.studio.domain.model.Pack;
@@ -18,7 +19,6 @@ import com.orazaka.studioservice.domain.port.PackRepository;
 import com.orazaka.studioservice.infrastructure.adapter.persistence.PersistenceTestWiring;
 import com.orazaka.studioservice.infrastructure.support.ColumnValueResolver;
 import com.orazaka.test.architecture.SqlBoundaryRules;
-import com.orazaka.test.container.ServiceRoles;
 import com.zaxxer.hikari.HikariDataSource;
 import java.nio.file.Path;
 import java.util.ArrayList;

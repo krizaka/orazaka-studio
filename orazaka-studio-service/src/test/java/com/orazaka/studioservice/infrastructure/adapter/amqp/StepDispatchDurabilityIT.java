@@ -3,12 +3,12 @@ package com.orazaka.studioservice.infrastructure.adapter.amqp;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.krizaka.test.container.ServiceRoles;
 import com.orazaka.jobs.domain.model.CapabilityRoute;
 import com.orazaka.jobs.domain.port.CapabilityRoutingClient;
 import com.orazaka.studio.domain.model.StepDispatch;
 import com.orazaka.studioservice.application.service.OutboxService;
 import com.orazaka.test.architecture.SqlBoundaryRules;
-import com.orazaka.test.container.ServiceRoles;
 import com.zaxxer.hikari.HikariDataSource;
 import java.nio.file.Path;
 import java.util.Map;

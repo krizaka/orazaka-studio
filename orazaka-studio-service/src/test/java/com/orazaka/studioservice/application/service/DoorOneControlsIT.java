@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.krizaka.messaging.dedup.JdbcMessageDedup;
+import com.krizaka.test.container.ServiceRoles;
 import com.orazaka.billing.domain.model.EntitlementSnapshot;
 import com.orazaka.billing.domain.model.PackProvision;
 import com.orazaka.billing.domain.port.EntitlementProvider;
@@ -25,7 +26,6 @@ import com.orazaka.studioservice.infrastructure.config.AssetStoreProperties.Depl
 import com.orazaka.studioservice.infrastructure.config.PackSourceProperties;
 import com.orazaka.studioservice.infrastructure.support.PackBundleResolver;
 import com.orazaka.test.architecture.SqlBoundaryRules;
-import com.orazaka.test.container.ServiceRoles;
 import com.zaxxer.hikari.HikariDataSource;
 import java.nio.file.Path;
 import java.time.Instant;

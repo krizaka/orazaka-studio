@@ -3,12 +3,12 @@ package com.orazaka.studioservice.application.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.krizaka.test.container.ServiceRoles;
 import com.orazaka.studio.domain.model.RunStatus;
 import com.orazaka.studio.domain.model.StepDispatch;
 import com.orazaka.studioservice.domain.model.RunDetail;
 import com.orazaka.studioservice.infrastructure.adapter.persistence.PersistenceTestWiring;
 import com.orazaka.test.architecture.SqlBoundaryRules;
-import com.orazaka.test.container.ServiceRoles;
 import com.zaxxer.hikari.HikariDataSource;
 import java.io.IOException;
 import java.io.UncheckedIOException;

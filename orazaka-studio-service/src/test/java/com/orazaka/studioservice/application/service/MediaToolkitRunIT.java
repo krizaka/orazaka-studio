@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.krizaka.test.container.ServiceRoles;
 import com.orazaka.billing.domain.model.EntitlementSnapshot;
 import com.orazaka.billing.domain.model.MeteredStep;
 import com.orazaka.billing.domain.port.EntitlementProvider;
@@ -15,7 +16,6 @@ import com.orazaka.studioservice.domain.model.ComposerStudio;
 import com.orazaka.studioservice.domain.model.RunDetail;
 import com.orazaka.test.architecture.SqlBoundaryRules;
 import com.orazaka.test.architecture.Workspace;
-import com.orazaka.test.container.ServiceRoles;
 import com.zaxxer.hikari.HikariDataSource;
 import java.nio.file.Files;
 import java.nio.file.Path;

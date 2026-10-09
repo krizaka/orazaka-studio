@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.krizaka.test.container.ServiceRoles;
 import com.orazaka.billing.domain.model.CreditHoldResponse;
 import com.orazaka.billing.domain.model.MeteredStep;
 import com.orazaka.billing.domain.port.CreditAuthorizationClient;
@@ -25,7 +26,6 @@ import com.orazaka.studioservice.infrastructure.adapter.persistence.PersistenceT
 import com.orazaka.studioservice.infrastructure.support.ColumnValueResolver;
 import com.orazaka.test.architecture.SqlBoundaryRules;
 import com.orazaka.test.architecture.Workspace;
-import com.orazaka.test.container.ServiceRoles;
 import com.zaxxer.hikari.HikariDataSource;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Files;

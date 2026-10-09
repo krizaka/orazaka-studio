@@ -56,7 +56,7 @@
         </dependency>
 
         <!-- NOTE (deviation from design §3/§9.2, deliberate): this service does NOT depend on
-             orazaka-business. SEAM-002 lists com.orazaka.business.. as a foreign Tier-3 impl, and
+             orazaka-business. SEAM-002 lists com.krizaka.orazaka.business.. as a foreign Tier-3 impl, and
              design §15 itself requires StudioServiceGovernanceTest to enforce SEAM-002 — the two
              cannot both hold. AGENTS.md wins: the DAG interpreter lives in this service's own
              application/service, and the Intention path reaches it through the Tier-1

@@ -31,7 +31,7 @@ import org.springframework.stereotype.Service;
  *
  * <p><b>Why it is a compensated sequence and not a distributed transaction.</b> An install writes
  * three databases owned by three services: {@code orazaka_db} holds {@code orazaka_capabilities},
- * {@code orazaka_billing_db} holds the price and the grants, {@code orazaka_studio_db} holds the
+ * {@code krizaka_billing_db} holds the price and the grants, {@code orazaka_studio_db} holds the
  * catalogue. SEAM-001 forbids the cross-context foreign keys that would be needed to make them one
  * schema, and deliberately so — that separation is what lets the catalogue be edited without
  * deploying the service that holds the credit ledger. A two-phase commit across three services

@@ -42,7 +42,7 @@ part of the [Orazaka platform](https://github.com/krizaka/orazaka) by [Krizaka](
 
 | | |
 |:---|:---|
-| Depends on | [`orazaka-build`](https://github.com/krizaka/orazaka-build) · [`orazaka-contracts`](https://github.com/krizaka/orazaka-contracts) · [`orazaka-billing`](https://github.com/krizaka/orazaka-billing) |
+| Depends on | [`orazaka-build`](https://github.com/krizaka/orazaka-build) · [`orazaka-contracts`](https://github.com/krizaka/orazaka-contracts) · [`krizaka-billing`](https://github.com/krizaka/krizaka-billing) |
 | Used by | [`orazaka-ai-engine`](https://github.com/krizaka/orazaka-ai-engine) |
 | Workspace path | `orazaka-apps/services/orazaka-studio` |
 

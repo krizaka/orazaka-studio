@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>com.orazaka</groupId>
+        <groupId>com.krizaka.orazaka</groupId>
         <artifactId>orazaka-studio</artifactId>
         <version>1.0.0-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
@@ -16,9 +16,19 @@
     <description>Studio service — the marketplace of installable business workflows: catalogue, blueprint versions, installations and run sagas over its own database (ADR-034)</description>
 
     <dependencies>
+        <!-- Krizaka platform kit: idempotent message consumption (claim / release). -->
+        <dependency>
+            <groupId>com.krizaka</groupId>
+            <artifactId>krizaka-messaging</artifactId>
+        </dependency>
+        <!-- Krizaka platform kit: session-JWT security baseline and service-to-service tokens. -->
+        <dependency>
+            <groupId>com.krizaka</groupId>
+            <artifactId>krizaka-security</artifactId>
+        </dependency>
         <!-- The Tier-1 contract this service serves (models + ports, zero impl deps) -->
         <dependency>
-            <groupId>com.orazaka</groupId>
+            <groupId>com.krizaka.orazaka</groupId>
             <artifactId>orazaka-studio-api</artifactId>
         </dependency>
 
@@ -26,31 +36,31 @@
              carries, resolved through CapabilityRoutingClient — never derived from the key
              (ADR-037 S1). Contract only; the job service owns the table. -->
         <dependency>
-            <groupId>com.orazaka</groupId>
+            <groupId>com.krizaka.orazaka</groupId>
             <artifactId>orazaka-jobs-api</artifactId>
         </dependency>
 
         <!-- Tier-1 billing contract: one hold per run, entitlement gates access (ADR-033).
-             The IMPLEMENTATION (orazaka-billing-service) is another context's Tier-3 and is
+             The IMPLEMENTATION (krizaka-billing-service) is another context's Tier-3 and is
              never imported — SEAM-002. -->
         <dependency>
-            <groupId>com.orazaka</groupId>
-            <artifactId>orazaka-billing-api</artifactId>
+            <groupId>com.krizaka</groupId>
+            <artifactId>krizaka-billing-api</artifactId>
         </dependency>
 
         <!-- Tier-2 SDK: the producer side of that contract. Selects a NoOp or an HTTP adapter at
              bootstrap, so no call site here ever branches on whether billing exists (ERR-127). -->
         <dependency>
-            <groupId>com.orazaka</groupId>
-            <artifactId>orazaka-billing-client</artifactId>
+            <groupId>com.krizaka</groupId>
+            <artifactId>krizaka-billing-client</artifactId>
         </dependency>
 
         <!-- NOTE (deviation from design §3/§9.2, deliberate): this service does NOT depend on
-             orazaka-business. SEAM-002 lists com.orazaka.business.. as a foreign Tier-3 impl, and
+             orazaka-business. SEAM-002 lists com.krizaka.orazaka.business.. as a foreign Tier-3 impl, and
              design §15 itself requires StudioServiceGovernanceTest to enforce SEAM-002 — the two
              cannot both hold. AGENTS.md wins: the DAG interpreter lives in this service's own
              application/service, and the Intention path reaches it through the Tier-1
-             StudioRunClient port implemented by an HTTP SDK, exactly as orazaka-billing-client
+             StudioRunClient port implemented by an HTTP SDK, exactly as krizaka-billing-client
              does for CreditAuthorizationClient. Hosting business here would give that library a
              second owner, which is the distributed monolith AGENTS.md §2 names as the health gauge. -->
 
@@ -131,7 +141,7 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>com.orazaka</groupId>
+            <groupId>com.krizaka.orazaka</groupId>
             <artifactId>orazaka-test-support</artifactId>
         </dependency>
         <dependency>

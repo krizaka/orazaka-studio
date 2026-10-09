@@ -1,10 +1,10 @@
 package com.orazaka.studioservice.application.service;
 
-import com.orazaka.billing.domain.model.BillableCapability;
-import com.orazaka.billing.domain.model.CreditHoldCommand;
-import com.orazaka.billing.domain.model.CreditHoldResponse;
-import com.orazaka.billing.domain.model.MeteredStep;
-import com.orazaka.billing.domain.port.CreditAuthorizationClient;
+import com.krizaka.billing.domain.model.BillableCapability;
+import com.krizaka.billing.domain.model.CreditHoldCommand;
+import com.krizaka.billing.domain.model.CreditHoldResponse;
+import com.krizaka.billing.domain.model.MeteredStep;
+import com.krizaka.billing.domain.port.CreditAuthorizationClient;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -58,7 +58,7 @@ public class CreditReservationService {
    * @param correlationId ties this hold to the run and every job it spawns
    * @param estimatedCredits the blueprint's estimate
    * @return the hold id to settle or release
-   * @throws com.orazaka.billing.domain.exception.InsufficientCreditsException when the actor cannot
+   * @throws com.krizaka.billing.domain.exception.InsufficientCreditsException when the actor cannot
    *     cover it under active enforcement — no compute starts without a hold
    */
   public String hold(String actorId, String correlationId, long estimatedCredits) {

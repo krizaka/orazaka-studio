@@ -11,12 +11,12 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.orazaka.billing.domain.model.BillableCapability;
-import com.orazaka.billing.domain.model.ConsumptionReport;
-import com.orazaka.billing.domain.model.CreditHoldCommand;
-import com.orazaka.billing.domain.model.CreditHoldResponse;
-import com.orazaka.billing.domain.model.MeteredStep;
-import com.orazaka.billing.domain.port.CreditAuthorizationClient;
+import com.krizaka.billing.domain.model.BillableCapability;
+import com.krizaka.billing.domain.model.ConsumptionReport;
+import com.krizaka.billing.domain.model.CreditHoldCommand;
+import com.krizaka.billing.domain.model.CreditHoldResponse;
+import com.krizaka.billing.domain.model.MeteredStep;
+import com.krizaka.billing.domain.port.CreditAuthorizationClient;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;

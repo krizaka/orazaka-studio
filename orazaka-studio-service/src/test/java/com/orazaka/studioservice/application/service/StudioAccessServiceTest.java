@@ -8,8 +8,8 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.orazaka.billing.domain.model.EntitlementSnapshot;
-import com.orazaka.billing.domain.port.EntitlementProvider;
+import com.krizaka.billing.domain.model.EntitlementSnapshot;
+import com.krizaka.billing.domain.port.EntitlementProvider;
 import com.orazaka.studio.domain.exception.StudioNotEntitledException;
 import com.orazaka.studio.domain.model.PackKind;
 import com.orazaka.studio.domain.model.Studio;

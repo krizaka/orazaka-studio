@@ -1,6 +1,6 @@
 package com.orazaka.studioservice.infrastructure.support;
 
-import com.orazaka.billing.domain.model.ConsumptionReport;
+import com.krizaka.billing.domain.model.ConsumptionReport;
 import com.orazaka.studio.domain.model.PackScopeGuard;
 import java.sql.ResultSet;
 import java.sql.SQLException;

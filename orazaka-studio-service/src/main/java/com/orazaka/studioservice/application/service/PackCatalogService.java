@@ -1,7 +1,7 @@
 package com.orazaka.studioservice.application.service;
 
-import com.orazaka.billing.domain.model.PackPrice;
-import com.orazaka.billing.domain.port.PackPricingClient;
+import com.krizaka.billing.domain.model.PackPrice;
+import com.krizaka.billing.domain.port.PackPricingClient;
 import com.orazaka.studio.domain.model.Pack;
 import com.orazaka.studio.domain.model.PackCategory;
 import com.orazaka.studio.domain.model.PackSummary;

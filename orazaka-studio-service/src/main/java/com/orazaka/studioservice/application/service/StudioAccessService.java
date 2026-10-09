@@ -1,7 +1,7 @@
 package com.orazaka.studioservice.application.service;
 
-import com.orazaka.billing.domain.model.EntitlementSnapshot;
-import com.orazaka.billing.domain.port.EntitlementProvider;
+import com.krizaka.billing.domain.model.EntitlementSnapshot;
+import com.krizaka.billing.domain.port.EntitlementProvider;
 import com.orazaka.studio.domain.exception.StudioNotEntitledException;
 import com.orazaka.studio.domain.model.PackKind;
 import com.orazaka.studio.domain.model.Studio;

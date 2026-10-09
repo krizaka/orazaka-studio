@@ -1,8 +1,8 @@
 package com.orazaka.studioservice.application.service;
 
-import com.orazaka.billing.domain.model.EntitlementGrant;
-import com.orazaka.billing.domain.model.PackProvision;
-import com.orazaka.billing.domain.port.PackProvisioningClient;
+import com.krizaka.billing.domain.model.EntitlementGrant;
+import com.krizaka.billing.domain.model.PackProvision;
+import com.krizaka.billing.domain.port.PackProvisioningClient;
 import com.orazaka.jobs.domain.model.CapabilityDeclaration;
 import com.orazaka.jobs.domain.port.CapabilityRegistrationClient;
 import com.orazaka.jobs.domain.port.CapabilityRoutingClient;

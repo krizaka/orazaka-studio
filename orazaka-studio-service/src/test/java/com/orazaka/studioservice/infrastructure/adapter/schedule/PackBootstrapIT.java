@@ -2,9 +2,9 @@ package com.orazaka.studioservice.infrastructure.adapter.schedule;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.krizaka.billing.domain.model.PackProvision;
+import com.krizaka.billing.domain.port.PackProvisioningClient;
 import com.krizaka.test.container.ServiceRoles;
-import com.orazaka.billing.domain.model.PackProvision;
-import com.orazaka.billing.domain.port.PackProvisioningClient;
 import com.orazaka.jobs.domain.model.CapabilityDeclaration;
 import com.orazaka.jobs.domain.model.CapabilityRoute;
 import com.orazaka.jobs.domain.port.CapabilityRegistrationClient;

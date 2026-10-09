@@ -1,7 +1,7 @@
 package com.orazaka.studioservice.application.service;
 
-import com.orazaka.billing.domain.model.BillableCapability;
-import com.orazaka.billing.domain.model.MeteredStep;
+import com.krizaka.billing.domain.model.BillableCapability;
+import com.krizaka.billing.domain.model.MeteredStep;
 import com.orazaka.jobs.domain.model.CapabilityRoute;
 import com.orazaka.jobs.domain.model.FailureCause;
 import com.orazaka.jobs.domain.port.CapabilityRoutingClient;

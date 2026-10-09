@@ -2,8 +2,8 @@ package com.orazaka.studioservice.infrastructure.adapter.rest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.orazaka.billing.domain.exception.InsufficientCreditsException;
-import com.orazaka.billing.domain.model.BillableCapability;
+import com.krizaka.billing.domain.exception.InsufficientCreditsException;
+import com.krizaka.billing.domain.model.BillableCapability;
 import com.orazaka.studio.domain.exception.BlueprintValidationException;
 import com.orazaka.studio.domain.exception.StudioNotEntitledException;
 import com.orazaka.studioservice.domain.exception.StudioIncludedException;

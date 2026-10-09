@@ -5,7 +5,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.orazaka.billing.domain.port.PackProvisioningClient;
+import com.krizaka.billing.domain.port.PackProvisioningClient;
 import com.orazaka.jobs.domain.model.CapabilityRoute;
 import com.orazaka.jobs.domain.port.CapabilityRegistrationClient;
 import com.orazaka.jobs.domain.port.CapabilityRoutingClient;

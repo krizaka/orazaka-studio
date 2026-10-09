@@ -1,6 +1,6 @@
 package com.orazaka.studioservice.infrastructure.adapter.rest;
 
-import com.orazaka.billing.domain.exception.InsufficientCreditsException;
+import com.krizaka.billing.domain.exception.InsufficientCreditsException;
 import com.orazaka.studio.domain.exception.BlueprintValidationException;
 import com.orazaka.studio.domain.exception.StudioNotEntitledException;
 import com.orazaka.studioservice.domain.exception.ConsentRequiredException;

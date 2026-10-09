@@ -6,9 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.krizaka.billing.domain.model.PackPrice;
+import com.krizaka.billing.domain.port.PackPricingClient;
 import com.krizaka.test.container.ServiceRoles;
-import com.orazaka.billing.domain.model.PackPrice;
-import com.orazaka.billing.domain.port.PackPricingClient;
 import com.orazaka.studio.domain.model.Pack;
 import com.orazaka.studio.domain.model.PackCategory;
 import com.orazaka.studio.domain.model.PackStatus;
@@ -416,7 +416,7 @@ class PackCatalogIT {
     StudioAccessService studioAccessService() {
       return new StudioAccessService(
           actorId ->
-              new com.orazaka.billing.domain.model.EntitlementSnapshot(
+              new com.krizaka.billing.domain.model.EntitlementSnapshot(
                   actorId, null, java.util.Map.of(), 0L, java.time.Instant.now()));
     }
 

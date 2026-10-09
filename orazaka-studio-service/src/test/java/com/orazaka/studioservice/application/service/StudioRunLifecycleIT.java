@@ -7,10 +7,10 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.krizaka.billing.domain.model.CreditHoldResponse;
+import com.krizaka.billing.domain.model.MeteredStep;
+import com.krizaka.billing.domain.port.CreditAuthorizationClient;
 import com.krizaka.test.container.ServiceRoles;
-import com.orazaka.billing.domain.model.CreditHoldResponse;
-import com.orazaka.billing.domain.model.MeteredStep;
-import com.orazaka.billing.domain.port.CreditAuthorizationClient;
 import com.orazaka.jobs.domain.model.FailureCause;
 import com.orazaka.jobs.domain.port.CapabilityRoutingClient;
 import com.orazaka.studio.domain.model.RunStatus;
@@ -889,13 +889,13 @@ class StudioRunLifecycleIT {
     int holds;
 
     @Override
-    public CreditHoldResponse hold(com.orazaka.billing.domain.model.CreditHoldCommand command) {
+    public CreditHoldResponse hold(com.krizaka.billing.domain.model.CreditHoldCommand command) {
       holds++;
       return new CreditHoldResponse("hold-1", true, false, command.estimatedCredits(), 1000, 1);
     }
 
     @Override
-    public void settle(com.orazaka.billing.domain.model.SettleCreditCommand command) {
+    public void settle(com.krizaka.billing.domain.model.SettleCreditCommand command) {
       // Single-unit settlement: not the run's path, which crosses several units at once.
     }
 
@@ -908,7 +908,7 @@ class StudioRunLifecycleIT {
     @Override
     public void settleMeasured(
         String holdId,
-        com.orazaka.billing.domain.model.ConsumptionReport report,
+        com.krizaka.billing.domain.model.ConsumptionReport report,
         String idempotencyKey) {
       // Not used by the run-level hold.
     }
@@ -968,10 +968,10 @@ class StudioRunLifecycleIT {
     }
 
     @Bean
-    com.orazaka.billing.domain.port.EntitlementProvider entitlementProvider() {
+    com.krizaka.billing.domain.port.EntitlementProvider entitlementProvider() {
       // Unresolved, like the no-op adapter: a FREE studio still installs during a billing outage.
       return actorId ->
-          com.orazaka.billing.domain.model.EntitlementSnapshot.unresolved(
+          com.krizaka.billing.domain.model.EntitlementSnapshot.unresolved(
               actorId, java.time.Instant.now().plusSeconds(60));
     }
 
@@ -1003,7 +1003,7 @@ class StudioRunLifecycleIT {
 
     @Bean
     StudioAccessService studioAccessService(
-        com.orazaka.billing.domain.port.EntitlementProvider provider) {
+        com.krizaka.billing.domain.port.EntitlementProvider provider) {
       return new StudioAccessService(provider);
     }
 

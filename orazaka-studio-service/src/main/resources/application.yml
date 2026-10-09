@@ -106,8 +106,11 @@ orazaka:
       # routing key here would be the second copy this whole change removed.
       base-url: ${JOB_SERVICE_INTERNAL_URL:http://localhost:8090}
       cache-ttl: ${STUDIO_JOB_PLANE_CACHE_TTL:60s}
+
+# ── Krizaka platform kit ──────────────────────────────────────────────────────
+krizaka:
   billing:
-    # Producer-side billing wiring (orazaka-billing-client): a run takes one hold.
+    # Producer-side billing wiring (krizaka-billing-client): a run takes one hold.
     # With billing disabled the NoOp adapter is selected and no call site branches.
     enabled: ${BILLING_ENABLED:false}
     base-url: ${BILLING_INTERNAL_URL:http://localhost:8095}
@@ -115,9 +118,6 @@ orazaka:
     # every consumer, so BILLING_ENABLED=true crashed each of them at startup with "the
     # shared identity secret is required" — billing had never been switched on anywhere.
     service-secret: ${IDENTITY_JWT_SECRET:orazaka-local-dev-identity-jwt-secret-256bit!}
-
-# ── Krizaka platform kit ──────────────────────────────────────────────────────
-krizaka:
   messaging:
     dedup:
       # Claims are rows in this context's processed_messages table: durable, shared by every

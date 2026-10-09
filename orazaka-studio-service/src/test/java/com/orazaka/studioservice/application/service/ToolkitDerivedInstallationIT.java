@@ -5,9 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.krizaka.billing.domain.model.EntitlementSnapshot;
+import com.krizaka.billing.domain.port.EntitlementProvider;
 import com.krizaka.test.container.ServiceRoles;
-import com.orazaka.billing.domain.model.EntitlementSnapshot;
-import com.orazaka.billing.domain.port.EntitlementProvider;
 import com.orazaka.jobs.domain.port.CapabilityRoutingClient;
 import com.orazaka.studio.domain.exception.StudioNotEntitledException;
 import com.orazaka.studio.domain.model.PackKind;

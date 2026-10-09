@@ -366,7 +366,9 @@ class ToolkitDerivedInstallationIT {
    * real publish service.
    */
   @Configuration
-  @EnableTransactionManagement
+  // Class proxies, as Spring Boot creates them in production: a service that implements a port
+  // (OutboxService is an OutboxStore) must still be injectable by its class.
+  @EnableTransactionManagement(proxyTargetClass = true)
   @Import(PersistenceTestWiring.class)
   static class ToolkitWiring extends StudioRunLifecycleIT.TestWiring {
 

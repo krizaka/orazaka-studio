@@ -6,8 +6,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.krizaka.messaging.dedup.MessageDedup;
 import com.orazaka.studioservice.application.service.InstallationLifecycleService;
-import com.orazaka.studioservice.application.service.MessageDedupService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -17,7 +17,7 @@ class SubscriptionChangeListenerTest {
 
   private final InstallationLifecycleService lifecycleService =
       mock(InstallationLifecycleService.class);
-  private final MessageDedupService dedupService = mock(MessageDedupService.class);
+  private final MessageDedup dedupService = mock(MessageDedup.class);
   private final SubscriptionChangeListener listener =
       new SubscriptionChangeListener(lifecycleService, dedupService);
 

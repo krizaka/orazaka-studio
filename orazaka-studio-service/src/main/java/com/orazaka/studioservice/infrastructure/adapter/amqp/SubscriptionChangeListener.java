@@ -1,8 +1,8 @@
 package com.orazaka.studioservice.infrastructure.adapter.amqp;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.krizaka.messaging.dedup.MessageDedup;
 import com.orazaka.studioservice.application.service.InstallationLifecycleService;
-import com.orazaka.studioservice.application.service.MessageDedupService;
 import java.util.Objects;
 import java.util.Set;
 import org.slf4j.Logger;
@@ -29,13 +29,13 @@ class SubscriptionChangeListener {
   private static final Set<String> ENTITLED = Set.of("ACTIVE", "TRIALING");
 
   private final InstallationLifecycleService lifecycleService;
-  private final MessageDedupService messageDedupService;
+  private final MessageDedup messageDedupService;
 
   SubscriptionChangeListener(
-      InstallationLifecycleService lifecycleService, MessageDedupService messageDedupService) {
+      InstallationLifecycleService lifecycleService, MessageDedup messageDedupService) {
     this.lifecycleService = Objects.requireNonNull(lifecycleService, "lifecycle required");
     this.messageDedupService =
-        Objects.requireNonNull(messageDedupService, "MessageDedupService cannot be null");
+        Objects.requireNonNull(messageDedupService, "MessageDedup cannot be null");
   }
 
   /**

@@ -754,7 +754,9 @@ class StudioRunLifecycleIT {
         "UPDATE studio_run SET finished_at = now() - INTERVAL '200 days' WHERE id = ?", run.id());
 
     new com.orazaka.studioservice.infrastructure.adapter.schedule.RetentionSweeper(
-            jdbcTemplate, context.getBean(StudioRuntimeConfigService.class))
+            jdbcTemplate,
+            context.getBean(StudioRuntimeConfigService.class),
+            new com.krizaka.messaging.dedup.JdbcMessageDedup(jdbcTemplate))
         .purge();
 
     assertTrue(runService.find(run.id(), ACTOR).isEmpty());
@@ -771,7 +773,9 @@ class StudioRunLifecycleIT {
     runService.cancel(run.id(), ACTOR);
 
     new com.orazaka.studioservice.infrastructure.adapter.schedule.RetentionSweeper(
-            jdbcTemplate, context.getBean(StudioRuntimeConfigService.class))
+            jdbcTemplate,
+            context.getBean(StudioRuntimeConfigService.class),
+            new com.krizaka.messaging.dedup.JdbcMessageDedup(jdbcTemplate))
         .purge();
 
     assertTrue(runService.find(run.id(), ACTOR).isPresent());
@@ -792,7 +796,9 @@ class StudioRunLifecycleIT {
         "UPDATE studio_run SET data_class = 'SENSITIVE' WHERE id = ?", protectedRun.id());
 
     new com.orazaka.studioservice.infrastructure.adapter.schedule.RetentionSweeper(
-            jdbcTemplate, context.getBean(StudioRuntimeConfigService.class))
+            jdbcTemplate,
+            context.getBean(StudioRuntimeConfigService.class),
+            new com.krizaka.messaging.dedup.JdbcMessageDedup(jdbcTemplate))
         .purge();
 
     assertTrue(
@@ -839,7 +845,9 @@ class StudioRunLifecycleIT {
 
   private void sweep() {
     new com.orazaka.studioservice.infrastructure.adapter.schedule.RetentionSweeper(
-            jdbcTemplate, context.getBean(StudioRuntimeConfigService.class))
+            jdbcTemplate,
+            context.getBean(StudioRuntimeConfigService.class),
+            new com.krizaka.messaging.dedup.JdbcMessageDedup(jdbcTemplate))
         .purge();
   }
 
@@ -912,7 +920,9 @@ class StudioRunLifecycleIT {
   }
 
   @Configuration
-  @EnableTransactionManagement
+  // Class proxies, as Spring Boot creates them in production: a service that implements a port
+  // (OutboxService is an OutboxStore) must still be injectable by its class.
+  @EnableTransactionManagement(proxyTargetClass = true)
   @org.springframework.context.annotation.Import(PersistenceTestWiring.class)
   static class TestWiring {
 

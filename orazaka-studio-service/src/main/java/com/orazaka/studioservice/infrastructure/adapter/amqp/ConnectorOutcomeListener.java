@@ -1,6 +1,6 @@
 package com.orazaka.studioservice.infrastructure.adapter.amqp;
 
-import com.orazaka.studioservice.application.service.MessageDedupService;
+import com.krizaka.messaging.dedup.MessageDedup;
 import com.orazaka.studioservice.application.service.RunSagaService;
 import java.util.Map;
 import java.util.Objects;
@@ -26,12 +26,12 @@ class ConnectorOutcomeListener {
   private static final String CONSUMER = "studio-connector";
 
   private final RunSagaService runSagaService;
-  private final MessageDedupService messageDedupService;
+  private final MessageDedup messageDedupService;
 
-  ConnectorOutcomeListener(RunSagaService runSagaService, MessageDedupService messageDedupService) {
+  ConnectorOutcomeListener(RunSagaService runSagaService, MessageDedup messageDedupService) {
     this.runSagaService = Objects.requireNonNull(runSagaService, "RunSagaService cannot be null");
     this.messageDedupService =
-        Objects.requireNonNull(messageDedupService, "MessageDedupService cannot be null");
+        Objects.requireNonNull(messageDedupService, "MessageDedup cannot be null");
   }
 
   /**

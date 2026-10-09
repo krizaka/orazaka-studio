@@ -1,5 +1,6 @@
 package com.orazaka.studio.client;
 
+import com.krizaka.security.token.ServiceTokenProvider;
 import com.orazaka.studio.domain.port.StudioCatalogClient;
 import com.orazaka.studio.domain.port.StudioRunClient;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;

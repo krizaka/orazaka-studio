@@ -73,11 +73,6 @@ logging:
 
 # ── Orazaka — service-owned wiring ────────────────────────────────────────────
 orazaka:
-  identity:
-    jwt:
-      # Contract copy of the shared HS256 secret the identity service signs with; every
-      # host validates locally, so a catalogue read costs no per-request identity hop.
-      secret: ${IDENTITY_JWT_SECRET:orazaka-local-dev-identity-jwt-secret-256bit!}
   studio-service:
     datasource:
       url: ${STUDIO_DB_URL:jdbc:postgresql://localhost:5432/orazaka_studio_db}
@@ -120,3 +115,17 @@ orazaka:
     # every consumer, so BILLING_ENABLED=true crashed each of them at startup with "the
     # shared identity secret is required" — billing had never been switched on anywhere.
     service-secret: ${IDENTITY_JWT_SECRET:orazaka-local-dev-identity-jwt-secret-256bit!}
+
+# ── Krizaka platform kit ──────────────────────────────────────────────────────
+krizaka:
+  messaging:
+    dedup:
+      # Claims are rows in this context's processed_messages table: durable, shared by every
+      # instance, arbitrated by its primary key.
+      store: jdbc
+  security:
+    jwt:
+      # The shared HS256 secret the identity service signs session and service tokens with.
+      # krizaka-security validates every request locally with it and refuses to start when it is
+      # shorter than 32 characters (256 bits).
+      secret: ${IDENTITY_JWT_SECRET:orazaka-local-dev-identity-jwt-secret-256bit!}

@@ -2,9 +2,9 @@ package com.orazaka.studioservice.infrastructure.adapter.jobs;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.krizaka.security.jwt.SessionJwtProperties;
 import com.orazaka.jobs.domain.model.CapabilityRoute;
 import com.orazaka.studioservice.infrastructure.config.CapabilityRoutingProperties;
-import com.orazaka.studioservice.infrastructure.config.SessionJwtProperties;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;

@@ -255,7 +255,9 @@ class RunOverheadMeasurementIT {
    * that asserts its behaviour wires it, or the number describes a different object.
    */
   @Configuration
-  @EnableTransactionManagement
+  // Class proxies, as Spring Boot creates them in production: a service that implements a port
+  // (OutboxService is an OutboxStore) must still be injectable by its class.
+  @EnableTransactionManagement(proxyTargetClass = true)
   @Import(PersistenceTestWiring.class)
   static class MeasurementWiring extends StudioRunLifecycleIT.TestWiring {
 

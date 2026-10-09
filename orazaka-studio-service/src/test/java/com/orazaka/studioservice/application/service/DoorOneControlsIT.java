@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.krizaka.messaging.dedup.JdbcMessageDedup;
 import com.orazaka.billing.domain.model.EntitlementSnapshot;
 import com.orazaka.billing.domain.model.PackProvision;
 import com.orazaka.billing.domain.port.EntitlementProvider;
@@ -259,7 +260,11 @@ class DoorOneControlsIT {
     jdbcTemplate.update(
         "UPDATE studio_run SET finished_at = now() - INTERVAL '45 days' WHERE id = ?", run.id());
 
-    new RetentionSweeper(jdbcTemplate, context.getBean(StudioRuntimeConfigService.class)).purge();
+    new RetentionSweeper(
+            jdbcTemplate,
+            context.getBean(StudioRuntimeConfigService.class),
+            new JdbcMessageDedup(jdbcTemplate))
+        .purge();
 
     assertTrue(
         runService.find(run.id(), ACTOR).isEmpty(),

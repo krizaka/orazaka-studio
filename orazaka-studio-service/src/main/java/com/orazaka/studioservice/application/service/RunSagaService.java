@@ -1,5 +1,6 @@
 package com.orazaka.studioservice.application.service;
 
+import com.krizaka.messaging.dedup.MessageDedup;
 import com.orazaka.jobs.domain.exception.UnroutableCapabilityException;
 import com.orazaka.jobs.domain.model.CapabilityRoute;
 import com.orazaka.jobs.domain.model.DataClass;
@@ -38,7 +39,7 @@ import org.springframework.transaction.annotation.Transactional;
  * holding anything open, and what makes a restart mid-run harmless.
  *
  * <p>Two idempotency guards, because an at-least-once redelivery must not re-submit a paid job: the
- * conditional {@code WHERE status = 'RUNNING'} below, and {@link MessageDedupService} above it.
+ * conditional {@code WHERE status = 'RUNNING'} below, and {@link MessageDedup} above it.
  */
 @Service
 public class RunSagaService {

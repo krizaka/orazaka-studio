@@ -1,7 +1,10 @@
 package com.orazaka.studioservice.infrastructure.adapter.schedule;
 
+import com.krizaka.messaging.dedup.MessageDedup;
 import com.orazaka.studio.domain.model.InstallationStatus;
 import com.orazaka.studioservice.application.service.StudioRuntimeConfigService;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,13 +48,20 @@ public class RetentionSweeper {
   private static final String INSTALLATION_RETENTION_KEY = "retention.revoked-installation-days";
   private static final int INSTALLATION_RETENTION_FALLBACK_DAYS = 30;
 
+  /** Dedup claims outlive their usefulness the moment redelivery is impossible. */
+  private static final Duration DEDUP_RETENTION = Duration.ofDays(7);
+
   private final JdbcTemplate jdbcTemplate;
   private final StudioRuntimeConfigService runtimeConfigService;
+  private final MessageDedup messageDedup;
 
   public RetentionSweeper(
-      JdbcTemplate jdbcTemplate, StudioRuntimeConfigService runtimeConfigService) {
+      JdbcTemplate jdbcTemplate,
+      StudioRuntimeConfigService runtimeConfigService,
+      MessageDedup messageDedup) {
     this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "JdbcTemplate cannot be null");
     this.runtimeConfigService = Objects.requireNonNull(runtimeConfigService, "config required");
+    this.messageDedup = Objects.requireNonNull(messageDedup, "MessageDedup cannot be null");
   }
 
   /** Deletes aged-out runs and long-revoked installations. */
@@ -92,10 +102,7 @@ public class RetentionSweeper {
             InstallationStatus.REVOKED.name(),
             installationDays);
 
-    // Dedup rows outlive their usefulness the moment redelivery is impossible.
-    int dedup =
-        jdbcTemplate.update(
-            "DELETE FROM processed_messages WHERE processed_at < now() - INTERVAL '7 days'");
+    long dedup = messageDedup.purgeClaimedBefore(Instant.now().minus(DEDUP_RETENTION));
 
     if (runs > 0 || sensitive > 0 || installations > 0 || dedup > 0) {
       logger.info(

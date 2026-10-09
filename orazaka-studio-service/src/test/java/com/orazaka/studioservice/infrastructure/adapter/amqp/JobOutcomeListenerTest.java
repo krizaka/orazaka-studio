@@ -9,7 +9,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.orazaka.studioservice.application.service.MessageDedupService;
+import com.krizaka.messaging.dedup.MessageDedup;
 import com.orazaka.studioservice.application.service.RunSagaService;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Test;
 class JobOutcomeListenerTest {
 
   private final RunSagaService runSagaService = mock(RunSagaService.class);
-  private final MessageDedupService dedupService = mock(MessageDedupService.class);
+  private final MessageDedup dedupService = mock(MessageDedup.class);
   private final JobOutcomeListener listener = new JobOutcomeListener(runSagaService, dedupService);
 
   @Test

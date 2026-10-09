@@ -1,7 +1,14 @@
 package com.orazaka.studioservice.application.service;
 
+import com.krizaka.messaging.outbox.OutboxMessage;
+import com.krizaka.messaging.outbox.OutboxStore;
+import java.nio.charset.StandardCharsets;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
@@ -18,9 +25,14 @@ import tools.jackson.databind.ObjectMapper;
  * after {@code convertAndSend} left a worker executing against a step row that no longer existed,
  * and the credit hold it had taken lives in ANOTHER service, so the rollback could not reach it —
  * hold taken, run gone, model burning, aggregate settle never called.
+ *
+ * <p>It is also the studio context's {@link OutboxStore}: the krizaka-messaging relay drains {@code
+ * studio_outbox} through it. The claim is {@code FOR UPDATE SKIP LOCKED} — the relay this replaced
+ * selected pending rows with no lock at all, which publishes a row twice the day a second instance
+ * runs (ADR-058 §3).
  */
 @Service
-public class OutboxService {
+public class OutboxService implements OutboxStore {
 
   private final JdbcTemplate jdbcTemplate;
   private final ObjectMapper objectMapper;
@@ -72,5 +84,66 @@ public class OutboxService {
         exchange,
         messageId,
         objectMapper.writeValueAsString(payload == null ? Map.of() : payload));
+  }
+
+  /**
+   * Claims the due rows, oldest first. {@code event_type} is the routing key.
+   *
+   * @param batchSize the most rows to claim
+   * @return the claimed rows, locked until the relay's transaction ends
+   */
+  @Override
+  public List<OutboxMessage> lockPendingBatch(int batchSize) {
+    return jdbcTemplate.query(
+        "SELECT id, event_type, exchange, message_id, payload::text, attempts FROM studio_outbox"
+            + " WHERE published_at IS NULL AND next_attempt_at <= now()"
+            + " ORDER BY created_at LIMIT ? FOR UPDATE SKIP LOCKED",
+        (rs, rowNum) ->
+            new OutboxMessage(
+                rs.getObject("id", UUID.class),
+                rs.getString("exchange"),
+                rs.getString("event_type"),
+                rs.getString("message_id"),
+                rs.getString("payload").getBytes(StandardCharsets.UTF_8),
+                rs.getInt("attempts")),
+        batchSize);
+  }
+
+  /**
+   * Records that a row reached the broker.
+   *
+   * @param id the row
+   */
+  @Override
+  public void markPublished(UUID id) {
+    jdbcTemplate.update("UPDATE studio_outbox SET published_at = now() WHERE id = ?", id);
+  }
+
+  /**
+   * Backs a row off after a failed publish: 5 s doubling per attempt, capped at 5 × 2⁶ s.
+   *
+   * @param id the row
+   * @param previousAttempts the attempts recorded before this failure
+   */
+  @Override
+  public void recordFailure(UUID id, int previousAttempts) {
+    jdbcTemplate.update(
+        "UPDATE studio_outbox SET attempts = attempts + 1,"
+            + " next_attempt_at = now() + (INTERVAL '5 seconds' * POWER(2, LEAST(attempts, 6)))"
+            + " WHERE id = ?",
+        id);
+  }
+
+  /**
+   * Deletes delivered rows older than the cutoff; undelivered rows are kept as evidence.
+   *
+   * @param cutoff rows published before this instant are deleted
+   * @return how many rows were deleted
+   */
+  @Override
+  public long purgePublishedBefore(Instant cutoff) {
+    return jdbcTemplate.update(
+        "DELETE FROM studio_outbox WHERE published_at IS NOT NULL AND published_at < ?",
+        Timestamp.from(cutoff));
   }
 }

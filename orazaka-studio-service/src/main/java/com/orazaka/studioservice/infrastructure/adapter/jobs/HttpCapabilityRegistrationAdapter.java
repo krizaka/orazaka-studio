@@ -1,11 +1,11 @@
 package com.orazaka.studioservice.infrastructure.adapter.jobs;
 
+import com.krizaka.security.jwt.SessionJwtProperties;
+import com.krizaka.security.token.ServiceTokenProvider;
 import com.orazaka.jobs.domain.exception.CapabilityRegistrationException;
 import com.orazaka.jobs.domain.model.CapabilityDeclaration;
 import com.orazaka.jobs.domain.port.CapabilityRegistrationClient;
 import com.orazaka.studioservice.infrastructure.config.CapabilityRoutingProperties;
-import com.orazaka.studioservice.infrastructure.config.SessionJwtProperties;
-import com.orazaka.studioservice.infrastructure.support.ServiceTokenProvider;
 import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

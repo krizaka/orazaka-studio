@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.krizaka.orazaka.studio.domain.model.PackBundle;
 import com.krizaka.orazaka.studio.domain.model.PackKind;
+import com.krizaka.orazaka.studio.domain.model.PackStudio;
 import com.krizaka.orazaka.studioservice.domain.exception.PackInstallException;
 import com.krizaka.orazaka.studioservice.infrastructure.config.PackSourceProperties;
 import com.krizaka.orazaka.test.architecture.Workspace;
@@ -77,7 +78,7 @@ class PackBundleResolverTest {
   }
 
   @Test
-  @DisplayName("the media toolkit resolves with its six Studios and its i18n overlay")
+  @DisplayName("the media toolkit resolves with its six capability Studios and its i18n overlay")
   void theMediaToolkitResolves() {
     Workspace.require(REPOSITORY_ROOT, "PACK-BUNDLE");
     PackBundleResolver resolver = resolverOn(REPOSITORY_ROOT);
@@ -85,7 +86,18 @@ class PackBundleResolverTest {
     PackBundle media = resolver.read(REPOSITORY_ROOT.resolve("orazaka-packs/orazaka-media"));
 
     assertThat(media.kind()).isEqualTo(PackKind.TOOLKIT);
-    assertThat(media.studios()).hasSize(6);
+    // The six capability Studios, whatever the toolkit adds beside them (art direction since
+    // 1.1.0):
+    // a count would fail every pack release that adds a Studio, which is not what this test guards.
+    assertThat(media.studios())
+        .extracting(PackStudio::key)
+        .contains(
+            "image-generation",
+            "video-generation",
+            "speech-synthesis",
+            "image-analysis",
+            "audio-analysis",
+            "video-analysis");
     assertThat(media.translations().keySet())
         .as("both locale files, read from i18n/ and keyed by file name")
         .containsExactlyInAnyOrder("en", "fr");

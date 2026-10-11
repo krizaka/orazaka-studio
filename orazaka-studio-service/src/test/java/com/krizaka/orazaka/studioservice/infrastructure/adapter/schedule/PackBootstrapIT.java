@@ -163,7 +163,8 @@ class PackBootstrapIT {
   }
 
   @Test
-  @DisplayName("the media pack's six Studios are published, with the blueprint each one runs")
+  @DisplayName(
+      "the media pack's six capability Studios are published, with the blueprint each one runs")
   void theMediaToolkitIsWhatCloseDoorOneNeeds() {
     List<String> installed =
         jdbcTemplate.queryForList(
@@ -176,8 +177,9 @@ class PackBootstrapIT {
             MEDIA_PACK);
 
     assertThat(installed)
-        .as("the six capabilities the composer is about to be served from")
-        .containsExactlyInAnyOrderElementsOf(MEDIA_STUDIOS);
+        .as(
+            "the six capabilities the composer is about to be served from, whatever the pack adds beside them")
+        .containsAll(MEDIA_STUDIOS);
     assertThat(
             jdbcTemplate.queryForObject(
                 "SELECT kind FROM pack WHERE pack_key = ?", String.class, MEDIA_PACK))

@@ -22,11 +22,12 @@ import org.testcontainers.utility.MountableFile;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * The declarations a conversational turn reads, against the <b>real</b> {@code 80-studio.sql}
- * (ADR-076): the pack row's JSONB, the installation's region and recorded consent, and the row
- * predicate that keeps one person's installation out of another's turn.
+ * {@link StepDeclarationService#forTurn}: the declarations a conversational turn reads, against the
+ * <b>real</b> {@code 80-studio.sql} (ADR-076): the pack row's JSONB, the installation's region and
+ * recorded consent, and the row predicate that keeps one person's installation out of another's
+ * turn.
  */
-class TurnDeclarationServiceIT {
+class StepDeclarationServiceIT {
 
   private static final String STUDIO_DB = "orazaka_studio_db";
   private static final String STUDIO_ROLE = "orazaka_studio";
@@ -48,7 +49,7 @@ class TurnDeclarationServiceIT {
 
   private static HikariDataSource dataSource;
   private static JdbcTemplate jdbc;
-  private static TurnDeclarationService service;
+  private static StepDeclarationService service;
 
   @BeforeAll
   static void start() {
@@ -68,7 +69,7 @@ class TurnDeclarationServiceIT {
     dataSource.setUsername(STUDIO_ROLE);
     dataSource.setPassword(STUDIO_PASSWORD);
     jdbc = new JdbcTemplate(dataSource);
-    service = new TurnDeclarationService(jdbc, new ColumnValueResolver(new ObjectMapper()));
+    service = new StepDeclarationService(jdbc, new ColumnValueResolver(new ObjectMapper()));
 
     jdbc.update(
         "INSERT INTO pack_category (category_key, icon_key) VALUES ('lifestyle', 'heart')"
@@ -120,7 +121,7 @@ class TurnDeclarationServiceIT {
   void readsTheDeclarations() {
     UUID id = install(ACTOR, "1.0", "ACTIVE");
 
-    TurnDeclarations declared = service.forInstallation(id, ACTOR).orElseThrow();
+    TurnDeclarations declared = service.forTurn(id, ACTOR).orElseThrow();
 
     assertThat(declared.packKey()).isEqualTo("bien-etre");
     assertThat(declared.region()).isEqualTo("CA-QC");
@@ -136,8 +137,8 @@ class TurnDeclarationServiceIT {
   void scopedToItsOwner() {
     UUID id = install(ACTOR, "1.0", "ACTIVE");
 
-    assertThat(service.forInstallation(id, "someone-else")).isEmpty();
-    assertThat(service.forInstallation(UUID.randomUUID(), ACTOR)).isEmpty();
+    assertThat(service.forTurn(id, "someone-else")).isEmpty();
+    assertThat(service.forTurn(UUID.randomUUID(), ACTOR)).isEmpty();
   }
 
   @Test
@@ -145,7 +146,7 @@ class TurnDeclarationServiceIT {
   void revokedIsAbsent() {
     UUID id = install(ACTOR, "1.0", "REVOKED");
 
-    assertThat(service.forInstallation(id, ACTOR)).isEmpty();
+    assertThat(service.forTurn(id, ACTOR)).isEmpty();
   }
 
   @Test
@@ -153,7 +154,7 @@ class TurnDeclarationServiceIT {
   void staleConsentRefuses() {
     UUID id = install(ACTOR, "0.9", "ACTIVE");
 
-    assertThatThrownBy(() -> service.forInstallation(id, ACTOR))
+    assertThatThrownBy(() -> service.forTurn(id, ACTOR))
         .isInstanceOfSatisfying(
             TurnConsentRequiredException.class,
             refused -> {

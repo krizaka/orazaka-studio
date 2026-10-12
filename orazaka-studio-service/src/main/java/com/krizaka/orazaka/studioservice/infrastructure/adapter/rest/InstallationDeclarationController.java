@@ -1,7 +1,7 @@
 package com.krizaka.orazaka.studioservice.infrastructure.adapter.rest;
 
 import com.krizaka.orazaka.studio.domain.model.TurnDeclarations;
-import com.krizaka.orazaka.studioservice.application.service.TurnDeclarationService;
+import com.krizaka.orazaka.studioservice.application.service.StepDeclarationService;
 import com.krizaka.orazaka.studioservice.domain.exception.InstallationNotFoundException;
 import java.util.Objects;
 import java.util.UUID;
@@ -23,10 +23,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/internal/v1/installations")
 class InstallationDeclarationController {
 
-  private final TurnDeclarationService declarations;
+  private final StepDeclarationService declarations;
 
-  InstallationDeclarationController(TurnDeclarationService declarations) {
-    this.declarations = Objects.requireNonNull(declarations, "TurnDeclarationService required");
+  InstallationDeclarationController(StepDeclarationService declarations) {
+    this.declarations = Objects.requireNonNull(declarations, "StepDeclarationService required");
   }
 
   /**
@@ -42,7 +42,7 @@ class InstallationDeclarationController {
   TurnDeclarations turnDeclarations(
       @PathVariable UUID installationId, @RequestParam String actorId) {
     return declarations
-        .forInstallation(installationId, actorId)
+        .forTurn(installationId, actorId)
         .orElseThrow(() -> new InstallationNotFoundException(installationId));
   }
 }

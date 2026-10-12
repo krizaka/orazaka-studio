@@ -19,12 +19,18 @@ import java.util.Map;
  *     so "reviewed by a human" is a claim with something behind it
  * @param resources one verified crisis line per region the pack is available in; a region absent
  *     here is a region the pack does not install in
+ * @param systemPrompt what a <b>conversational</b> turn of this pack is told first, before anything
+ *     a caller adds: what the assistant is and is not (ADR-076). Optional, because a pack that only
+ *     runs Studios has no conversation; when present it is the pack's own text, reviewed like the
+ *     response, and the engine places it ahead of every other system message — a caller's context
+ *     comes after it, never before, so the pack stays the law of the turn
  */
 public record PackSafety(
     List<String> crisisTerms,
     String response,
     String safetyReviewRef,
-    Map<String, CrisisResource> resources) {
+    Map<String, CrisisResource> resources,
+    String systemPrompt) {
 
   /** Compact canonical constructor enforcing the declaration's invariants (ERR-106). */
   public PackSafety {
@@ -48,6 +54,9 @@ public record PackSafety(
               + " everywhere and sourced nowhere is the failure this record exists to prevent");
     }
     resources = Map.copyOf(new LinkedHashMap<>(resources));
+    // Blank is not a prompt: an empty system message would place nothing ahead of the caller's
+    // context while reading, to anyone checking the declaration, as if something were there.
+    systemPrompt = systemPrompt == null || systemPrompt.isBlank() ? null : systemPrompt.strip();
     for (Map.Entry<String, CrisisResource> entry : resources.entrySet()) {
       if (!entry.getKey().equals(entry.getValue().region())) {
         throw new IllegalArgumentException(

@@ -37,4 +37,25 @@ class BlueprintOutputTest {
         IllegalArgumentException.class,
         () -> new BlueprintOutput("k", "L", "{{ eval('x') }}", "TEXT"));
   }
+
+  @Test
+  void carries_aContract_onAJsonOutput() {
+    BlueprintOutput output =
+        new BlueprintOutput("summary", "S", "{{steps.s.content}}", "JSON", "{\"type\":\"object\"}");
+
+    assertEquals("{\"type\":\"object\"}", output.schema());
+  }
+
+  @Test
+  void rejects_aContract_onAnOutputNobodyParses() {
+    // A schema on TEXT would be a declaration that is never checked (ADR-076).
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new BlueprintOutput("k", "L", "{{item}}", "TEXT", "{\"type\":\"object\"}"));
+  }
+
+  @Test
+  void reads_aBlankContract_asNone() {
+    assertEquals(null, new BlueprintOutput("k", "L", "{{item}}", "JSON", " ").schema());
+  }
 }

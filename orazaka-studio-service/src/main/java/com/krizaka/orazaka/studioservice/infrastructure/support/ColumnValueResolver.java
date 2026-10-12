@@ -153,6 +153,41 @@ public class ColumnValueResolver {
     }
   }
 
+  /**
+   * Holds a produced value to the contract its output declares (ADR-076).
+   *
+   * <p>A string is parsed as JSON first — a chat step answers in text, and its object is inside it,
+   * possibly in a Markdown fence ({@link OutputContract#unfenced}); anything already structured is
+   * taken as it is.
+   *
+   * @param schemaJson the declared schema, as stored in the blueprint
+   * @param produced the resolved value
+   * @return the value as compact JSON text when it conforms — text, like every other JSON output a
+   *     run stores, so the artefact a client reads is the object and not a fence around it
+   * @throws OutputContractException naming the first violations — never the value
+   */
+  public String conforming(String schemaJson, Object produced) {
+    JsonNode schema = objectMapper.readTree(schemaJson);
+    JsonNode value;
+    if (produced instanceof String text) {
+      try {
+        value = objectMapper.readTree(OutputContract.unfenced(text));
+      } catch (RuntimeException unparseable) {
+        throw new OutputContractException(List.of("$: not JSON"));
+      }
+    } else {
+      value = objectMapper.valueToTree(produced);
+    }
+    if (value == null || value.isMissingNode()) {
+      throw new OutputContractException(List.of("$: empty"));
+    }
+    List<String> violations = OutputContract.violations(schema, value);
+    if (!violations.isEmpty()) {
+      throw new OutputContractException(violations);
+    }
+    return objectMapper.writeValueAsString(value);
+  }
+
   public String json(Map<String, ?> value) {
     return objectMapper.writeValueAsString(value == null ? Map.of() : value);
   }

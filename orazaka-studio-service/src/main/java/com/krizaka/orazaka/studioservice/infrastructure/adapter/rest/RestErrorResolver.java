@@ -3,6 +3,7 @@ package com.krizaka.orazaka.studioservice.infrastructure.adapter.rest;
 import com.krizaka.billing.domain.exception.InsufficientCreditsException;
 import com.krizaka.orazaka.studio.domain.exception.BlueprintValidationException;
 import com.krizaka.orazaka.studio.domain.exception.StudioNotEntitledException;
+import com.krizaka.orazaka.studio.domain.exception.TurnConsentRequiredException;
 import com.krizaka.orazaka.studioservice.domain.exception.ConsentRequiredException;
 import com.krizaka.orazaka.studioservice.domain.exception.InstallationNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.exception.PackInstallException;
@@ -214,6 +215,24 @@ public class RestErrorResolver {
     body.put(STATUS_KEY, "consent_required");
     body.put(MESSAGE_KEY, ex.getMessage());
     body.put("studioKey", ex.studioKey());
+    body.put("consentVersion", ex.requiredVersion());
+    body.put("statement", ex.statement());
+    return ResponseEntity.status(HttpStatus.UNAVAILABLE_FOR_LEGAL_REASONS).body(body);
+  }
+
+  /**
+   * Maps a turn under an installation whose consent is out of date to {@code 451} (ADR-076).
+   *
+   * @param ex the refusal, carrying the statement in force
+   * @return {@code 451} with the version and the statement, verbatim
+   */
+  @ExceptionHandler(TurnConsentRequiredException.class)
+  public ResponseEntity<Map<String, Object>> handleTurnConsentRequired(
+      TurnConsentRequiredException ex) {
+    logger.info("A turn requires consent version {}", ex.requiredVersion());
+    Map<String, Object> body = new HashMap<>();
+    body.put(STATUS_KEY, "consent_required");
+    body.put(MESSAGE_KEY, ex.getMessage());
     body.put("consentVersion", ex.requiredVersion());
     body.put("statement", ex.statement());
     return ResponseEntity.status(HttpStatus.UNAVAILABLE_FOR_LEGAL_REASONS).body(body);

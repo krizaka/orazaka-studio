@@ -164,12 +164,18 @@ class JdbcPackInstallRepositoryAdapter implements PackInstallRepository {
                         "availability", resource.availability(),
                         "sourceUrl", resource.sourceUrl(),
                         "verifiedOn", resource.verifiedOn().toString())));
-    return columns.json(
-        Map.of(
-            "crisisTerms", safety.crisisTerms(),
-            "response", safety.response(),
-            "safetyReviewRef", safety.safetyReviewRef(),
-            "resources", resources));
+    Map<String, Object> declared = new LinkedHashMap<>();
+    declared.put("crisisTerms", safety.crisisTerms());
+    declared.put("response", safety.response());
+    declared.put("safetyReviewRef", safety.safetyReviewRef());
+    declared.put("resources", resources);
+    // The conversational prompt travels with the crisis declaration it belongs to (ADR-076), and
+    // only when the pack wrote one: an absent key reads as "no prompt", a null would read the same
+    // and cost every reader a null check.
+    if (safety.systemPrompt() != null) {
+      declared.put("systemPrompt", safety.systemPrompt());
+    }
+    return columns.json(declared);
   }
 
   @Override

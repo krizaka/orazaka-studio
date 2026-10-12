@@ -15,8 +15,12 @@ import java.util.Objects;
  * @param type the rendering hint — {@code VIDEO}, {@code IMAGE}, {@code TEXT}; a free string on
  *     purpose, since a closed enum here would make a new output medium a deploy, which is the one
  *     thing ADR-034 exists to avoid
+ * @param schema the JSON Schema a {@code JSON} output must satisfy, as JSON text, or {@code null}.
+ *     Declared by the author and enforced by the saga before the run succeeds (ADR-076): a model
+ *     asked for an object returns prose often enough that "type: JSON" without a contract is a
+ *     rendering hint the value does not keep
  */
-public record BlueprintOutput(String key, String label, String from, String type) {
+public record BlueprintOutput(String key, String label, String from, String type, String schema) {
 
   /**
    * Compact canonical constructor; validates its own template grammar as the field owner (ERR-106).
@@ -33,5 +37,23 @@ public record BlueprintOutput(String key, String label, String from, String type
     }
     Objects.requireNonNull(type, "output type must not be null");
     RunScope.assertValidGrammar(from);
+    schema = schema == null || schema.isBlank() ? null : schema;
+    if (schema != null && !"JSON".equals(type)) {
+      // A contract on a value nobody parses would be a declaration that is never checked.
+      throw new IllegalArgumentException(
+          "output '" + key + "' declares a schema but is of type " + type + ", not JSON");
+    }
+  }
+
+  /**
+   * An output with no contract — every output a blueprint wrote before contracts existed.
+   *
+   * @param key stable identifier
+   * @param label what the actor sees
+   * @param from where the value comes from
+   * @param type the rendering hint
+   */
+  public BlueprintOutput(String key, String label, String from, String type) {
+    this(key, label, from, type, null);
   }
 }

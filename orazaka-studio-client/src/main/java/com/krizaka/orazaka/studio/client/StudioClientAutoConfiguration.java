@@ -2,6 +2,7 @@ package com.krizaka.orazaka.studio.client;
 
 import com.krizaka.orazaka.studio.domain.port.StudioCatalogClient;
 import com.krizaka.orazaka.studio.domain.port.StudioRunClient;
+import com.krizaka.orazaka.studio.domain.port.TurnDeclarationClient;
 import com.krizaka.security.token.ServiceTokenProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -73,7 +74,30 @@ public class StudioClientAutoConfiguration {
     return new NoOpStudioCatalogClient();
   }
 
-  /** One client shape for both adapters. */
+  /**
+   * The turn-declaration adapter, wired by the same switch (ADR-076).
+   *
+   * @param properties the consumer-side wiring
+   * @return an HTTP client pointed at the studio service's internal surface
+   */
+  @Bean
+  @ConditionalOnProperty(prefix = "orazaka.studio", name = "enabled", havingValue = "true")
+  TurnDeclarationClient httpTurnDeclarationClient(StudioProperties properties) {
+    return new HttpTurnDeclarationClient(studioRestClient(properties));
+  }
+
+  /**
+   * The fallback, which refuses: a turn under an installation must not run without its guards.
+   *
+   * @return a client that refuses
+   */
+  @Bean
+  @ConditionalOnMissingBean(TurnDeclarationClient.class)
+  TurnDeclarationClient noOpTurnDeclarationClient() {
+    return new NoOpTurnDeclarationClient();
+  }
+
+  /** One client shape for every adapter. */
   private static RestClient studioRestClient(StudioProperties properties) {
     SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
     requestFactory.setConnectTimeout(properties.connectTimeout());

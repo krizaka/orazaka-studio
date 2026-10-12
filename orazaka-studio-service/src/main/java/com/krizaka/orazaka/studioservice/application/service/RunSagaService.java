@@ -7,6 +7,7 @@ import com.krizaka.orazaka.jobs.domain.model.DataClass;
 import com.krizaka.orazaka.jobs.domain.model.FailureCause;
 import com.krizaka.orazaka.jobs.domain.port.CapabilityRoutingClient;
 import com.krizaka.orazaka.studio.domain.model.Blueprint;
+import com.krizaka.orazaka.studio.domain.model.BlueprintOutput;
 import com.krizaka.orazaka.studio.domain.model.BlueprintStep;
 import com.krizaka.orazaka.studio.domain.model.ErrorPolicy;
 import com.krizaka.orazaka.studio.domain.model.RunScope;
@@ -17,6 +18,7 @@ import com.krizaka.orazaka.studio.domain.model.StepKind;
 import com.krizaka.orazaka.studioservice.domain.port.BlueprintRepository;
 import com.krizaka.orazaka.studioservice.domain.port.StepExecutionClient;
 import com.krizaka.orazaka.studioservice.infrastructure.support.ColumnValueResolver;
+import com.krizaka.orazaka.studioservice.infrastructure.support.OutputContractException;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -550,7 +552,26 @@ public class RunSagaService {
 
   private void succeedRun(RunRow run, Blueprint blueprint, RunScope scope) {
     Map<String, Object> outputs = new LinkedHashMap<>();
-    blueprint.outputs().forEach(output -> outputs.put(output.key(), scope.resolve(output.from())));
+    for (BlueprintOutput output : blueprint.outputs()) {
+      Object value = scope.resolve(output.from());
+      if (output.schema() != null) {
+        // A contract the blueprint declared is checked before the run is called a success
+        // (ADR-076). An output that breaks it fails the run as the executor's fault — the model
+        // did not produce what was asked — so the hold is released, never billed for prose
+        // nobody can use. The reason names paths and rules, never the value.
+        try {
+          value = columns.conforming(output.schema(), value);
+        } catch (OutputContractException broken) {
+          failRun(
+              run,
+              blueprint,
+              "output '" + output.key() + "': " + broken.getMessage(),
+              FailureCause.EXECUTOR_FAULT);
+          return;
+        }
+      }
+      outputs.put(output.key(), value);
+    }
 
     jdbcTemplate.update(
         "UPDATE studio_run SET status = ?, outputs = ?::jsonb, finished_at = now()"

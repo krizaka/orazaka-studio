@@ -8,6 +8,7 @@ import com.krizaka.orazaka.studio.domain.model.BlueprintStatus;
 import com.krizaka.orazaka.studio.domain.model.BlueprintStep;
 import com.krizaka.orazaka.studio.domain.model.ErrorPolicy;
 import com.krizaka.orazaka.studio.domain.model.StepKind;
+import com.krizaka.orazaka.studioservice.infrastructure.support.OutputContract;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -157,9 +158,28 @@ final class BlueprintMapper {
               text(output, "key"),
               text(output, "label"),
               text(output, "from"),
-              textOr(output, "type", "TEXT")));
+              textOr(output, "type", "TEXT"),
+              schemaOf(output)));
     }
     return parsed;
+  }
+
+  /**
+   * The output's contract, as JSON text, refused at load when it uses a keyword the saga does not
+   * enforce — a keyword silently ignored is a contract that reads stricter than it is (ADR-076).
+   */
+  private static String schemaOf(JsonNode output) {
+    JsonNode schema = output.path("schema");
+    if (schema.isMissingNode() || schema.isNull()) {
+      return null;
+    }
+    List<String> unsupported = OutputContract.unsupportedKeywords(schema);
+    if (!unsupported.isEmpty()) {
+      throw new BlueprintValidationException(
+          text(output, "key"),
+          "the output schema uses keywords the saga does not enforce: " + unsupported);
+    }
+    return schema.toString();
   }
 
   private static Set<String> readStringSet(JsonNode node) {

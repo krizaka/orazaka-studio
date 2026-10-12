@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.krizaka.orazaka.studio.domain.port.StudioCatalogClient;
 import com.krizaka.orazaka.studio.domain.port.StudioRunClient;
+import com.krizaka.orazaka.studio.domain.port.TurnDeclarationClient;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -27,6 +28,8 @@ class StudioClientAutoConfigurationTest {
           assertThat(context).hasSingleBean(StudioCatalogClient.class);
           assertThat(context.getBean(StudioRunClient.class))
               .isInstanceOf(NoOpStudioRunClient.class);
+          assertThat(context.getBean(TurnDeclarationClient.class))
+              .isInstanceOf(NoOpTurnDeclarationClient.class);
         });
   }
 
@@ -43,6 +46,8 @@ class StudioClientAutoConfigurationTest {
                   .isInstanceOf(HttpStudioRunClient.class);
               assertThat(context.getBean(StudioCatalogClient.class))
                   .isInstanceOf(HttpStudioCatalogClient.class);
+              assertThat(context.getBean(TurnDeclarationClient.class))
+                  .isInstanceOf(HttpTurnDeclarationClient.class);
             });
   }
 
@@ -52,6 +57,17 @@ class StudioClientAutoConfigurationTest {
     // A run that silently went nowhere would leave the caller waiting for an outcome that can
     // never arrive — worse than an immediate, explicit failure.
     assertThatThrownBy(() -> new NoOpStudioRunClient().start(UUID.randomUUID(), Map.of()))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("not deployed");
+  }
+
+  @Test
+  @DisplayName("The no-op refuses a turn's declarations rather than letting it run unguarded")
+  void noOpTurnDeclarationsRefuse() {
+    // ADR-076: an empty answer would read as "this pack declares nothing" and the turn would run
+    // without its crisis guard.
+    assertThatThrownBy(
+            () -> new NoOpTurnDeclarationClient().forInstallation(UUID.randomUUID(), "actor"))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("not deployed");
   }

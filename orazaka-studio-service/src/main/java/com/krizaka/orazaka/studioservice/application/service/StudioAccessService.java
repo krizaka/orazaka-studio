@@ -6,8 +6,10 @@ import com.krizaka.orazaka.studio.domain.exception.StudioNotEntitledException;
 import com.krizaka.orazaka.studio.domain.model.PackKind;
 import com.krizaka.orazaka.studio.domain.model.Studio;
 import com.krizaka.orazaka.studioservice.domain.model.StudioAccess;
+import com.krizaka.orazaka.studioservice.domain.port.EntitlementGrantRepository;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import org.springframework.stereotype.Service;
 
 /**
@@ -17,6 +19,10 @@ import org.springframework.stereotype.Service;
  * install and run paths. One implementation rather than two, because a catalogue that greys a
  * Studio the install path would accept — or the reverse — is worse than either behaviour alone.
  *
+ * <p>Access is billing's answer <b>or</b> an operator's grant ({@link EntitlementGrantRepository}):
+ * a first-party product's service account, a pilot, an environment where nothing is sold. A grant
+ * only ever opens; an actor without one is decided by billing alone.
+ *
  * <p>Entitlement gates <b>access</b>; credits gate <b>volume</b>. This service never looks at a
  * balance: an actor with no credits is entitled and broke, which is a different screen from an
  * actor who has not bought the product.
@@ -25,10 +31,17 @@ import org.springframework.stereotype.Service;
 public class StudioAccessService {
 
   private final EntitlementProvider entitlementProvider;
+  private final EntitlementGrantRepository grants;
 
-  public StudioAccessService(EntitlementProvider entitlementProvider) {
+  /**
+   * @param entitlementProvider what the actor bought (billing)
+   * @param grants what the operator granted the actor directly — it only ever adds to billing
+   */
+  public StudioAccessService(
+      EntitlementProvider entitlementProvider, EntitlementGrantRepository grants) {
     this.entitlementProvider =
         Objects.requireNonNull(entitlementProvider, "EntitlementProvider cannot be null");
+    this.grants = Objects.requireNonNull(grants, "EntitlementGrantRepository cannot be null");
   }
 
   /**
@@ -40,7 +53,8 @@ public class StudioAccessService {
    */
   public StudioAccess evaluate(Studio studio, String actorId) {
     EntitlementSnapshot snapshot = entitlementProvider.forActor(actorId);
-    return StudioAccess.of(studio, snapshot.allows(studio.entitlementKey()), snapshot.resolved());
+    Set<String> granted = grants.grantedKeys(actorId);
+    return StudioAccess.of(studio, allows(snapshot, granted, studio), snapshot.resolved());
   }
 
   /**
@@ -55,13 +69,21 @@ public class StudioAccessService {
    */
   public Map<String, StudioAccess> evaluateAll(Iterable<Studio> studios, String actorId) {
     EntitlementSnapshot snapshot = entitlementProvider.forActor(actorId);
+    Set<String> granted = grants.grantedKeys(actorId);
     java.util.Map<String, StudioAccess> decisions = new java.util.LinkedHashMap<>();
     for (Studio studio : studios) {
       decisions.put(
           studio.studioKey(),
-          StudioAccess.of(studio, snapshot.allows(studio.entitlementKey()), snapshot.resolved()));
+          StudioAccess.of(studio, allows(snapshot, granted, studio), snapshot.resolved()));
     }
     return Map.copyOf(decisions);
+  }
+
+  /**
+   * Billing's answer, or the operator's grant: either one opens the Studio. A grant never locks.
+   */
+  private static boolean allows(EntitlementSnapshot snapshot, Set<String> granted, Studio studio) {
+    return snapshot.allows(studio.entitlementKey()) || granted.contains(studio.entitlementKey());
   }
 
   /**

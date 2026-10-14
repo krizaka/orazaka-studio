@@ -17,6 +17,7 @@ import com.krizaka.orazaka.studio.domain.model.StudioPricing;
 import com.krizaka.orazaka.studio.domain.model.StudioStatus;
 import com.krizaka.orazaka.studioservice.domain.model.LockReason;
 import com.krizaka.orazaka.studioservice.domain.model.StudioAccess;
+import com.krizaka.orazaka.studioservice.domain.port.EntitlementGrantRepository;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -29,7 +30,9 @@ class StudioAccessServiceTest {
   private static final String ACTOR = "550e8400-e29b-41d4-a716-446655440002";
 
   private final EntitlementProvider entitlementProvider = mock(EntitlementProvider.class);
-  private final StudioAccessService accessService = new StudioAccessService(entitlementProvider);
+  private final EntitlementGrantRepository operatorGrants = mock(EntitlementGrantRepository.class);
+  private final StudioAccessService accessService =
+      new StudioAccessService(entitlementProvider, operatorGrants);
 
   private static Studio studio(String key, StudioPricing pricing, String packKey) {
     return studio(key, pricing, packKey, PackKind.VERTICAL);
@@ -172,5 +175,62 @@ class StudioAccessServiceTest {
                 studio("realestate-reels", StudioPricing.PAID, "realestate", PackKind.VERTICAL),
                 ACTOR))
         .isFalse();
+  }
+
+  // ── Operator grants: a first-party service account, a pilot, an environment that sells nothing
+  // ──
+
+  @Test
+  @DisplayName("An operator's grant opens a PAID Studio while billing is off (unresolved snapshot)")
+  void operatorGrantOpensPaidWithoutBilling() {
+    when(entitlementProvider.forActor(anyString()))
+        .thenReturn(EntitlementSnapshot.unresolved(ACTOR, Instant.now().plusSeconds(5)));
+    when(operatorGrants.grantedKeys(ACTOR)).thenReturn(Set.of("studio.compliance-check"));
+
+    accessService.requireEntitled(
+        studio("compliance-check", StudioPricing.PAID, "document-validation"), ACTOR);
+    assertThat(
+            accessService
+                .evaluate(
+                    studio("document-authenticity", StudioPricing.PAID, "document-validation"),
+                    ACTOR)
+                .reason())
+        .as("a grant opens the Studio it names, and only that one")
+        .isEqualTo(LockReason.UNKNOWN);
+  }
+
+  @Test
+  @DisplayName("An operator's grant opens a PAID Studio a resolved plan does not include")
+  void operatorGrantAddsToAPlan() {
+    grants("studio.trade-showcase");
+    when(operatorGrants.grantedKeys(ACTOR)).thenReturn(Set.of("studio.compliance-check"));
+
+    Map<String, StudioAccess> decisions =
+        accessService.evaluateAll(
+            List.of(
+                studio("trade-showcase", StudioPricing.FREE, null),
+                studio("compliance-check", StudioPricing.PAID, "document-validation"),
+                studio("realestate-reels", StudioPricing.PAID, "realestate-studio")),
+            ACTOR);
+
+    verify(operatorGrants, times(1)).grantedKeys(ACTOR);
+    assertThat(decisions.get("trade-showcase").locked()).isFalse();
+    assertThat(decisions.get("compliance-check").locked()).isFalse();
+    assertThat(decisions.get("realestate-reels").reason()).isEqualTo(LockReason.REQUIRES_PURCHASE);
+  }
+
+  @Test
+  @DisplayName("No grant changes nothing: billing alone decides, as before")
+  void noGrantIsBillingAlone() {
+    when(entitlementProvider.forActor(anyString()))
+        .thenReturn(EntitlementSnapshot.unresolved(ACTOR, Instant.now().plusSeconds(5)));
+    when(operatorGrants.grantedKeys(ACTOR)).thenReturn(Set.of());
+
+    assertThat(
+            accessService
+                .evaluate(
+                    studio("compliance-check", StudioPricing.PAID, "document-validation"), ACTOR)
+                .reason())
+        .isEqualTo(LockReason.UNKNOWN);
   }
 }

@@ -417,7 +417,8 @@ class PackCatalogIT {
       return new StudioAccessService(
           actorId ->
               new com.krizaka.billing.domain.model.EntitlementSnapshot(
-                  actorId, null, java.util.Map.of(), 0L, java.time.Instant.now()));
+                  actorId, null, java.util.Map.of(), 0L, java.time.Instant.now()),
+          actorId -> java.util.Set.of());
     }
 
     @Bean

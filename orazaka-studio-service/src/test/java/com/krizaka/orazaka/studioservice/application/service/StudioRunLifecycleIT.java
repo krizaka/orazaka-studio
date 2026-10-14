@@ -1004,7 +1004,7 @@ class StudioRunLifecycleIT {
     @Bean
     StudioAccessService studioAccessService(
         com.krizaka.billing.domain.port.EntitlementProvider provider) {
-      return new StudioAccessService(provider);
+      return new StudioAccessService(provider, actorId -> java.util.Set.of());
     }
 
     @Bean

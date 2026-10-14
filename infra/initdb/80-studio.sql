@@ -240,6 +240,24 @@ CREATE TABLE studio_installation (
 CREATE INDEX idx_installation_actor ON studio_installation(actor_id, status);
 CREATE INDEX idx_installation_consent ON studio_installation(studio_key, consent_version) WHERE consent_version IS NOT NULL;
 
+-- ── Operator grants ─────────────────────────────────────────────────────────
+-- A Studio entitlement given to an actor by the OPERATOR of this platform, outside any plan: a
+-- first-party product calling Orazaka with its service account (Yomizaka runs the document
+-- Studios), a pilot customer, an environment where nothing is sold (dev, BILLING_ENABLED=false).
+-- It only ever ADDS to billing's answer (StudioAccessService): no row, billing decides alone.
+-- Data, never configuration: granted and revoked here, each with its reason and, when it is a
+-- pilot, its end. entitlement_key is the studio's (studio.<studioKey>) — no FK, a grant may name
+-- a Studio its pack has not installed yet. actor_id is OPAQUE (SEAM-001).
+CREATE TABLE studio_entitlement_grant (
+    actor_id        VARCHAR(255) NOT NULL,
+    entitlement_key VARCHAR(120) NOT NULL,
+    reason          TEXT         NOT NULL CHECK (length(trim(reason)) > 0),
+    granted_by      VARCHAR(255) NOT NULL,
+    granted_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    expires_at      TIMESTAMPTZ,
+    PRIMARY KEY (actor_id, entitlement_key)
+);
+
 -- ── Execution (design §5) ───────────────────────────────────────────────────
 -- blueprint_version is DENORMALISED on purpose: a run stays reproducible after
 -- the installation is upgraded to a newer blueprint.

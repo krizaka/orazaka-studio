@@ -2,7 +2,6 @@ package com.krizaka.orazaka.studioservice.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -126,25 +125,18 @@ class StudioAccessServiceTest {
   @Test
   @DisplayName("requireEntitled passes a granted studio through silently")
   void requireEntitledAllowsGranted() {
-    assertDoesNotThrow(
-        () -> {
-          grants("studio.trade-showcase");
+    grants("studio.trade-showcase");
 
-          accessService.requireEntitled(studio("trade-showcase", StudioPricing.FREE, null), ACTOR);
-        });
+    accessService.requireEntitled(studio("trade-showcase", StudioPricing.FREE, null), ACTOR);
   }
 
   @Test
   @DisplayName("An unresolved snapshot does not refuse an INCLUDED studio during a billing outage")
   void unresolvedDoesNotRefuseIncluded() {
-    assertDoesNotThrow(
-        () -> {
-          when(entitlementProvider.forActor(anyString()))
-              .thenReturn(EntitlementSnapshot.unresolved(ACTOR, Instant.now().plusSeconds(5)));
+    when(entitlementProvider.forActor(anyString()))
+        .thenReturn(EntitlementSnapshot.unresolved(ACTOR, Instant.now().plusSeconds(5)));
 
-          accessService.requireEntitled(
-              studio("trade-showcase", StudioPricing.INCLUDED, null), ACTOR);
-        });
+    accessService.requireEntitled(studio("trade-showcase", StudioPricing.INCLUDED, null), ACTOR);
   }
 
   // ── ADR-061: the derived installation ────────────────────────────────────────────────────────

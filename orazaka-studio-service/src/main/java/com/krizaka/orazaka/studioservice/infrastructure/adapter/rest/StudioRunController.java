@@ -2,9 +2,11 @@ package com.krizaka.orazaka.studioservice.infrastructure.adapter.rest;
 
 import com.krizaka.orazaka.studioservice.application.service.StudioRunService;
 import com.krizaka.orazaka.studioservice.domain.exception.RunNotFoundException;
+import com.krizaka.orazaka.studioservice.domain.model.ContentDecision;
 import com.krizaka.orazaka.studioservice.infrastructure.adapter.rest.dto.RunRequest;
 import com.krizaka.orazaka.studioservice.infrastructure.adapter.rest.dto.RunResponse;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -78,6 +80,32 @@ class StudioRunController {
     RunRequest resolved = request == null ? new RunRequest(null) : request;
     return ResponseEntity.accepted()
         .body(RunResponse.from(runService.start(studioKey, actor.getSubject(), resolved.inputs())));
+  }
+
+  /**
+   * Dry-run of the content policy: what would a run with these inputs do? Nothing is held, stored
+   * or sent to a provider.
+   *
+   * @param studioKey the Studio
+   * @param request the would-be answers
+   * @param actor the authenticated caller
+   * @return {@code 200} with the labels, the decision and the rule that decided
+   */
+  @PostMapping("/{studioKey}/policy-check")
+  ResponseEntity<Map<String, Object>> policyCheck(
+      @PathVariable String studioKey,
+      @RequestBody(required = false) RunRequest request,
+      @AuthenticationPrincipal Jwt actor) {
+    RunRequest resolved = request == null ? new RunRequest(null) : request;
+    ContentDecision d = runService.checkPolicy(studioKey, actor.getSubject(), resolved.inputs());
+    return ResponseEntity.ok(
+        Map.of(
+            "decision", d.verb(),
+            "refused", d.refused(),
+            "rule", d.rule(),
+            "labels", d.labels().stream().map(Enum::name).sorted().toList(),
+            "warnings", d.warnings(),
+            "providers", d.providers()));
   }
 
   /**

@@ -213,7 +213,7 @@ class ToolkitDerivedInstallationIT {
     assertEquals(RunStatus.RUNNING, run.status());
     assertNull(run.installationId(), "a derived installation has no row to point at");
 
-    sagaService.applyOutcome(executor.dispatched.get(0), Map.of("url", "/media/a.png"), null);
+    sagaService.applyOutcome(executor.dispatched.getFirst(), Map.of("url", "/media/a.png"), null);
     sagaService.applyOutcome(executor.dispatched.get(1), Map.of("url", "/media/b.png"), null);
     assertEquals(RunStatus.SUCCEEDED, runService.find(run.id(), ACTOR).orElseThrow().status());
 
@@ -290,7 +290,7 @@ class ToolkitDerivedInstallationIT {
         catalogService.latestPublished(FLOATING_STUDIO).orElseThrow().version(),
         "the publication happened — the next resolution would pick it");
 
-    sagaService.applyOutcome(executor.dispatched.get(0), Map.of("url", "/media/a.png"), null);
+    sagaService.applyOutcome(executor.dispatched.getFirst(), Map.of("url", "/media/a.png"), null);
 
     assertEquals(
         "v1 second",

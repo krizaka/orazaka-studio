@@ -228,7 +228,7 @@ class StudioRunLifecycleIT {
     assertNotNull(finished.finishedAt());
     RunArtefact showcase =
         finished.outputs().stream()
-            .filter(artefact -> artefact.key().equals("showcase"))
+            .filter(artefact -> "showcase".equals(artefact.key()))
             .findFirst()
             .orElseThrow(() -> new AssertionError("the declared output is missing"));
     assertEquals("/media/img-1.png", showcase.value());
@@ -279,7 +279,7 @@ class StudioRunLifecycleIT {
         credits.released.contains("hold-1"),
         "a run that measured something is settled, never released");
 
-    List<MeteredStep> settled = credits.aggregateSettlements.get(0);
+    List<MeteredStep> settled = credits.aggregateSettlements.getFirst();
     assertEquals(
         executor.dispatched.size(),
         settled.size(),
@@ -326,7 +326,7 @@ class StudioRunLifecycleIT {
   @DisplayName("[§15] a replayed outcome advances the DAG exactly once — no second submission")
   void replayedOutcomeIsHarmless() {
     startRun();
-    String firstJob = executor.dispatched.get(0);
+    String firstJob = executor.dispatched.getFirst();
 
     sagaService.applyOutcome(firstJob, Map.of("content", "a"), null);
     int afterFirst = executor.dispatched.size();
@@ -353,7 +353,7 @@ class StudioRunLifecycleIT {
     // asserted RUNNING here while the policy was SKIP — a run in which nothing analysed anything
     // carried on and finished green, which is exactly what hid the missing asset resolution for
     // three phases. The change of expectation IS the behaviour change.
-    sagaService.applyOutcome(executor.dispatched.get(0), Map.of(), "vision died");
+    sagaService.applyOutcome(executor.dispatched.getFirst(), Map.of(), "vision died");
 
     RunDetail failed = runService.find(run.id(), ACTOR).orElseThrow();
     assertEquals(
@@ -370,7 +370,7 @@ class StudioRunLifecycleIT {
     RunDetail run = startRun();
     // One instance succeeds and measures; the next declares the payload unusable.
     sagaService.applyOutcome(
-        executor.dispatched.get(0),
+        executor.dispatched.getFirst(),
         Map.of("content", "ok"),
         Map.of("tokens", 3400),
         "llava",
@@ -391,7 +391,7 @@ class StudioRunLifecycleIT {
     assertEquals(1, credits.aggregateSettlements.size());
     assertEquals(
         1,
-        credits.aggregateSettlements.get(0).size(),
+        credits.aggregateSettlements.getFirst().size(),
         "exactly the steps that measured something — not the estimate, not the whole DAG");
   }
 
@@ -400,7 +400,7 @@ class StudioRunLifecycleIT {
   void aRefusalAndATimeoutSettleDifferently() {
     RunDetail refused = startRun();
     sagaService.applyOutcome(
-        executor.dispatched.get(0),
+        executor.dispatched.getFirst(),
         Map.of("content", "ok"),
         Map.of("tokens", 3400),
         "llava",
@@ -425,7 +425,7 @@ class StudioRunLifecycleIT {
   void platformFaultReleasesEverything() {
     RunDetail run = startRun();
     sagaService.applyOutcome(
-        executor.dispatched.get(0),
+        executor.dispatched.getFirst(),
         Map.of("content", "ok"),
         Map.of("tokens", 3400),
         "llava",
@@ -450,7 +450,7 @@ class StudioRunLifecycleIT {
   void anUndeclaredCauseReleases() {
     RunDetail run = startRun();
     sagaService.applyOutcome(
-        executor.dispatched.get(0),
+        executor.dispatched.getFirst(),
         Map.of("content", "ok"),
         Map.of("tokens", 3400),
         "llava",
@@ -477,7 +477,7 @@ class StudioRunLifecycleIT {
   void theRunRecordsItsCategory() {
     RunDetail run = startRun();
     sagaService.applyOutcome(
-        executor.dispatched.get(0),
+        executor.dispatched.getFirst(),
         Map.of(),
         Map.of(),
         null,
@@ -501,7 +501,7 @@ class StudioRunLifecycleIT {
             + " formées répondent, tout de suite : 3114.";
 
     sagaService.applyOutcome(
-        executor.dispatched.get(0),
+        executor.dispatched.getFirst(),
         Map.of(),
         Map.of(),
         null,
@@ -517,11 +517,12 @@ class StudioRunLifecycleIT {
                 + " FROM studio_run_audit a WHERE run_id = ? AND event = 'RUN_FAILED'",
             run.id());
     assertEquals(1, trail.size());
-    assertEquals("GUARD_REFUSAL", trail.get(0).get("failure_cause"));
+    assertEquals("GUARD_REFUSAL", trail.getFirst().get("failure_cause"));
     // …and nothing it matched: not the reviewed answer, not a fragment of it, in any column.
     assertFalse(
-        String.valueOf(trail.get(0).get("whole")).contains("3114"),
-        "the trail keeps a permanent record of a crisis response: " + trail.get(0).get("whole"));
+        String.valueOf(trail.getFirst().get("whole")).contains("3114"),
+        "the trail keeps a permanent record of a crisis response: "
+            + trail.getFirst().get("whole"));
   }
 
   @Test
@@ -533,7 +534,7 @@ class StudioRunLifecycleIT {
         "Je rédige et relis des documents. Je ne donne pas de conseil juridique — "
             + "pour cela, adressez-vous à un professionnel du droit.";
 
-    sagaService.applyOutcome(executor.dispatched.get(0), Map.of(), refusal);
+    sagaService.applyOutcome(executor.dispatched.getFirst(), Map.of(), refusal);
 
     RunDetail failed = runService.find(run.id(), ACTOR).orElseThrow();
     assertEquals(RunStatus.FAILED, failed.status());

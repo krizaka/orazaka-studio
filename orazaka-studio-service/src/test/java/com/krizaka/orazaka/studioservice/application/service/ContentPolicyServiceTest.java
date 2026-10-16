@@ -180,7 +180,7 @@ class ContentPolicyServiceTest {
         .isInstanceOf(ContentPolicyRefusedException.class)
         .hasMessageContaining(ContentDecision.REFUSED_CODE);
     assertThat(jdbc.audit).hasSize(1);
-    Object[] row = jdbc.audit.get(0);
+    Object[] row = jdbc.audit.getFirst();
     assertThat(row[3]).isEqualTo("REFUSED");
     assertThat(row[4]).isEqualTo("minors_risk.always");
     assertThat(java.util.Arrays.toString(row)).doesNotContain(text);
@@ -202,6 +202,6 @@ class ContentPolicyServiceTest {
         service(jdbc)
             .check(ACTOR, "s", Map.of("prompt", prompt("explicit-redacted")), List.of(VIDEO));
     assertThat(d.refused()).isTrue();
-    assertThat(jdbc.audit.get(0)[6]).isEqualTo(true);
+    assertThat(jdbc.audit.getFirst()[6]).isEqualTo(true);
   }
 }

@@ -1,5 +1,7 @@
 package com.krizaka.orazaka.studioservice.domain.exception;
 
+import java.io.Serial;
+
 /**
  * Thrown when an actor asks to install a TOOLKIT Studio: there is nothing to install.
  *
@@ -16,7 +18,7 @@ package com.krizaka.orazaka.studioservice.domain.exception;
  */
 public class StudioIncludedException extends RuntimeException {
 
-  private static final long serialVersionUID = 1L;
+  @Serial private static final long serialVersionUID = 1L;
 
   private final String studioKey;
   private final String entitlementKey;

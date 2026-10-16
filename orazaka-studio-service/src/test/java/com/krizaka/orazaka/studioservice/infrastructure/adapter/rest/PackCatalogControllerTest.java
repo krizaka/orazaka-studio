@@ -88,8 +88,8 @@ class PackCatalogControllerTest {
     List<PackSummaryResponse> cards = controller.browse(null, "fr", ACTOR);
 
     assertThat(cards).hasSize(1);
-    assertThat(cards.get(0).categoryKey()).isEqualTo("business");
-    assertThat(cards.get(0).priceCents()).isEqualTo(4900);
+    assertThat(cards.getFirst().categoryKey()).isEqualTo("business");
+    assertThat(cards.getFirst().priceCents()).isEqualTo(4900);
   }
 
   @Test
@@ -100,7 +100,7 @@ class PackCatalogControllerTest {
     when(catalogService.browse(isNull(), org.mockito.ArgumentMatchers.eq("fr")))
         .thenReturn(List.of(card(null)));
 
-    assertThat(controller.browse(null, "fr", ACTOR).get(0).priceCents()).isNull();
+    assertThat(controller.browse(null, "fr", ACTOR).getFirst().priceCents()).isNull();
   }
 
   @Test

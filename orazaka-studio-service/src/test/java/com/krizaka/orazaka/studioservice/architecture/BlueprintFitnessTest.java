@@ -157,7 +157,7 @@ class BlueprintFitnessTest {
     Set<String> contributed = new LinkedHashSet<>();
     try (Stream<Path> manifests = Files.walk(packs, 2)) {
       for (Path manifest :
-          manifests.filter(p -> p.getFileName().toString().equals("pack.yaml")).toList()) {
+          manifests.filter(p -> "pack.yaml".equals(p.getFileName().toString())).toList()) {
         Matcher declared = CONTRIBUTED_CAPABILITY.matcher(Files.readString(manifest));
         while (declared.find()) {
           contributed.add(declared.group(1));

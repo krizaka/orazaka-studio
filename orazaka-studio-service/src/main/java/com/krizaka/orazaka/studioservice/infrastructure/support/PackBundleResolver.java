@@ -5,7 +5,6 @@ import com.krizaka.orazaka.studioservice.domain.exception.PackInstallException;
 import com.krizaka.orazaka.studioservice.infrastructure.config.PackSourceProperties;
 import java.io.IOException;
 import java.io.Reader;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -237,7 +236,7 @@ public class PackBundleResolver {
       throw new PackInstallException(
           "No readable " + MANIFEST + " at " + manifest + " — that file is what makes a pack");
     }
-    try (Reader reader = Files.newBufferedReader(manifest, StandardCharsets.UTF_8)) {
+    try (Reader reader = Files.newBufferedReader(manifest)) {
       Object loaded = new Yaml(new SafeConstructor(new LoaderOptions())).load(reader);
       if (!(loaded instanceof Map<?, ?> mapping)) {
         throw new PackInstallException(manifest + " is not a manifest mapping");
@@ -345,7 +344,7 @@ public class PackBundleResolver {
   /** Reads a blueprint as a tree, naming the file when it is not JSON. */
   private JsonNode readJson(Path file) {
     try {
-      return objectMapper.readTree(Files.readString(file, StandardCharsets.UTF_8));
+      return objectMapper.readTree(Files.readString(file));
     } catch (IOException | RuntimeException malformed) {
       throw new PackInstallException(file + " is not readable JSON", malformed);
     }

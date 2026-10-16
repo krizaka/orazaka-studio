@@ -243,7 +243,7 @@ class MediaToolkitRunIT {
           assertEquals(1, executor.dispatched.size(), studioKey + " is one step, not two");
 
           sagaService.applyOutcome(
-              executor.dispatched.get(0),
+              executor.dispatched.getFirst(),
               OUTCOMES.get(studioKey),
               CONSUMPTION.get(studioKey),
               ENGINES.get(studioKey),
@@ -258,11 +258,11 @@ class MediaToolkitRunIT {
           // be the double-billing ADR-044 closed; zero is what every one of these capabilities did
           // through door 1.
           assertEquals(1, credits.aggregateSettlements.size(), studioKey + " settled exactly once");
-          List<MeteredStep> steps = credits.aggregateSettlements.get(0);
+          List<MeteredStep> steps = credits.aggregateSettlements.getFirst();
           assertEquals(1, steps.size(), studioKey + " settled its single step");
           assertEquals(
               ENGINES.get(studioKey),
-              steps.get(0).modelName(),
+              steps.getFirst().modelName(),
               studioKey + " settled against the engine that ran, not the capability default");
           assertTrue(credits.released.isEmpty(), studioKey + " released nothing");
         });

@@ -2,6 +2,7 @@ package com.krizaka.orazaka.studioservice.domain.exception;
 
 import com.krizaka.orazaka.studioservice.domain.model.ContentDecision;
 import com.krizaka.orazaka.studioservice.domain.model.ContentLabel;
+import java.io.Serial;
 import java.util.Set;
 
 /**
@@ -10,7 +11,7 @@ import java.util.Set;
  */
 public class ContentPolicyRefusedException extends RuntimeException {
 
-  private static final long serialVersionUID = 1L;
+  @Serial private static final long serialVersionUID = 1L;
 
   private final transient ContentDecision decision;
 

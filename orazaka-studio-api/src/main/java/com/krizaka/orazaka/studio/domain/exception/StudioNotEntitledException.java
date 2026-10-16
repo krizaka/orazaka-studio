@@ -1,5 +1,7 @@
 package com.krizaka.orazaka.studio.domain.exception;
 
+import java.io.Serial;
+
 /**
  * Thrown when an actor asks to install or run a Studio their entitlements do not grant.
  *
@@ -13,7 +15,7 @@ package com.krizaka.orazaka.studio.domain.exception;
  */
 public class StudioNotEntitledException extends RuntimeException {
 
-  private static final long serialVersionUID = 1L;
+  @Serial private static final long serialVersionUID = 1L;
 
   private final String studioKey;
   private final String entitlementKey;

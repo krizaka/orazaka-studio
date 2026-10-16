@@ -1,5 +1,7 @@
 package com.krizaka.orazaka.studio.domain.exception;
 
+import java.io.Serial;
+
 /**
  * A conversational turn was asked under an installation whose recorded consent is not to the
  * statement its pack now requires (ADR-055 §3, ADR-076).
@@ -9,7 +11,7 @@ package com.krizaka.orazaka.studio.domain.exception;
  */
 public class TurnConsentRequiredException extends RuntimeException {
 
-  private static final long serialVersionUID = 1L;
+  @Serial private static final long serialVersionUID = 1L;
 
   private final String requiredVersion;
   private final String statement;

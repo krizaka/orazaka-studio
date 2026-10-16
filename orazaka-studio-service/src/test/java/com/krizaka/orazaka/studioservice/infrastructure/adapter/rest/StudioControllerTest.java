@@ -76,8 +76,8 @@ class StudioControllerTest {
     List<StudioSummaryResponse> cards = controller.browse(null, "fr", ACTOR_JWT);
 
     assertThat(cards).hasSize(1);
-    assertThat(cards.get(0).locked()).isTrue();
-    assertThat(cards.get(0).packKey()).isEqualTo("realestate-studio");
+    assertThat(cards.getFirst().locked()).isTrue();
+    assertThat(cards.getFirst().packKey()).isEqualTo("realestate-studio");
   }
 
   @Test

@@ -558,6 +558,12 @@ class StudioRunLifecycleIT {
     assertTrue(credits.released.contains("hold-1"));
     assertTrue(
         cancelled.steps().stream().allMatch(step -> step.status() == RunStepStatus.CANCELLED));
+    // The executors are told, not left to finish: one job.cancel.<id> per dispatched step.
+    Integer stops =
+        jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM studio_outbox WHERE event_type LIKE 'job.cancel.%'",
+            Integer.class);
+    assertEquals(executor.dispatched.size(), stops);
   }
 
   // ── §15: the immutability trigger is a schema claim ───────────────────────

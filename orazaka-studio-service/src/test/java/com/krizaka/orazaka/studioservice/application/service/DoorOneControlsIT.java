@@ -156,7 +156,7 @@ class DoorOneControlsIT {
     // plane ONLY as a column of a run's step, and the command queued for the broker is addressed to
     // the run that asked for it. There is no longer a producer that can mint one without a run —
     // `POST /api/v1/jobs` is deleted, and the outbox is the only path to the jobs exchange.
-    String jobId = executor.dispatched.get(0);
+    String jobId = executor.dispatched.getFirst();
     assertEquals(
         1,
         jdbcTemplate.queryForObject(
@@ -187,7 +187,7 @@ class DoorOneControlsIT {
 
     RunDetail run = start(STANDARD_STUDIO, Map.of("prompt", "une façade au petit matin"));
     sagaService.applyOutcome(
-        executor.dispatched.get(0),
+        executor.dispatched.getFirst(),
         Map.of("url", "/api/v1/assets/j/i.png", "format", "png"),
         Map.of("images", 1, "steps", 20, "width", 1024, "height", 1024),
         "sd-turbo",
@@ -251,7 +251,7 @@ class DoorOneControlsIT {
     // Control 4 — retention by class: the shorter window, applied without anyone setting it. The
     // run is aged past the SENSITIVE window (30 days) and left well inside the standard one (90).
     sagaService.applyOutcome(
-        executor.dispatched.get(0),
+        executor.dispatched.getFirst(),
         Map.of("verdict", "coherent"),
         Map.of("tokens", 900),
         "rules",

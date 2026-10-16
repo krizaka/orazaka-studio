@@ -1,5 +1,7 @@
 package com.krizaka.orazaka.studioservice.domain.exception;
 
+import java.io.Serial;
+
 /**
  * Thrown when an actor asks to run a VERTICAL Studio they are entitled to but have not installed.
  *
@@ -12,7 +14,7 @@ package com.krizaka.orazaka.studioservice.domain.exception;
  */
 public class StudioNotInstalledException extends RuntimeException {
 
-  private static final long serialVersionUID = 1L;
+  @Serial private static final long serialVersionUID = 1L;
 
   private final String studioKey;
   private final String entitlementKey;

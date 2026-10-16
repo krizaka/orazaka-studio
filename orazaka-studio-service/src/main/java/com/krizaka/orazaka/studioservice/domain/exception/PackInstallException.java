@@ -1,5 +1,7 @@
 package com.krizaka.orazaka.studioservice.domain.exception;
 
+import java.io.Serial;
+
 /**
  * A pack bundle could not be installed.
  *
@@ -9,7 +11,7 @@ package com.krizaka.orazaka.studioservice.domain.exception;
  */
 public class PackInstallException extends RuntimeException {
 
-  private static final long serialVersionUID = 1L;
+  @Serial private static final long serialVersionUID = 1L;
 
   /**
    * Creates the exception.

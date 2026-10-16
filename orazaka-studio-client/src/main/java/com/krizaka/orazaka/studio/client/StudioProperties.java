@@ -32,7 +32,7 @@ public record StudioProperties(
 
   /** Compact canonical constructor supplying defaults (ERR-106). */
   public StudioProperties {
-    baseUrl = (baseUrl == null || baseUrl.isBlank()) ? "http://localhost:8096" : baseUrl;
+    baseUrl = baseUrl == null || baseUrl.isBlank() ? "http://localhost:8096" : baseUrl;
     connectTimeout = connectTimeout == null ? Duration.ofSeconds(1) : connectTimeout;
     readTimeout = readTimeout == null ? Duration.ofSeconds(5) : readTimeout;
   }

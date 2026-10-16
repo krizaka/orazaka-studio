@@ -1,5 +1,7 @@
 package com.krizaka.orazaka.studioservice.domain.exception;
 
+import java.io.Serial;
+
 /**
  * Thrown when a Studio key names nothing in the catalogue.
  *
@@ -8,7 +10,7 @@ package com.krizaka.orazaka.studioservice.domain.exception;
  */
 public class StudioNotFoundException extends RuntimeException {
 
-  private static final long serialVersionUID = 1L;
+  @Serial private static final long serialVersionUID = 1L;
 
   private final String studioKey;
 

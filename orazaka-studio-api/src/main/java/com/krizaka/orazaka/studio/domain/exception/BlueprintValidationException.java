@@ -1,5 +1,7 @@
 package com.krizaka.orazaka.studio.domain.exception;
 
+import java.io.Serial;
+
 /**
  * Thrown when a blueprint cannot be statically validated, and therefore must never be persisted.
  *
@@ -14,7 +16,7 @@ package com.krizaka.orazaka.studio.domain.exception;
  */
 public class BlueprintValidationException extends RuntimeException {
 
-  private static final long serialVersionUID = 1L;
+  @Serial private static final long serialVersionUID = 1L;
 
   private final String stepId;
 

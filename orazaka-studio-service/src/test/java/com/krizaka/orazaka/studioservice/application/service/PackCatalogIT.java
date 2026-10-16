@@ -275,7 +275,7 @@ class PackCatalogIT {
 
     assertTrue(
         catalog.browse(null, "fr").stream()
-            .noneMatch(c -> c.pack().packKey().equals("draft-pack")));
+            .noneMatch(c -> "draft-pack".equals(c.pack().packKey())));
 
     Pack draft = catalog.find("draft-pack", "fr").orElseThrow();
     assertEquals(PackStatus.DRAFT, draft.status());
@@ -324,7 +324,7 @@ class PackCatalogIT {
 
   private static PackSummary onlyCard(List<PackSummary> cards) {
     assertEquals(1, cards.size(), () -> "expected exactly the seeded pack, got: " + cards);
-    return cards.get(0);
+    return cards.getFirst();
   }
 
   /**

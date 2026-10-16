@@ -38,7 +38,7 @@ public record PackStudio(
   public PackStudio {
     // Schema defaults, honoured here so an omitted optional is not a 400 (ADR-048).
     status = status == null ? StudioStatus.DRAFT : status;
-    publisherId = (publisherId == null || publisherId.isBlank()) ? "orazaka" : publisherId;
+    publisherId = publisherId == null || publisherId.isBlank() ? "orazaka" : publisherId;
     sortWeight = sortWeight == null ? 0 : sortWeight;
     if (key == null || !KEY.matcher(key).matches()) {
       throw new IllegalArgumentException("studio key must be kebab-case: " + key);

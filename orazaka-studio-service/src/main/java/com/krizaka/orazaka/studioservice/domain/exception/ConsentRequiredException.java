@@ -1,5 +1,7 @@
 package com.krizaka.orazaka.studioservice.domain.exception;
 
+import java.io.Serial;
+
 /**
  * An installation of a {@code REGULATED} pack was attempted without the consent it requires, or
  * with consent to a statement that has since changed.
@@ -10,7 +12,7 @@ package com.krizaka.orazaka.studioservice.domain.exception;
  */
 public class ConsentRequiredException extends RuntimeException {
 
-  private static final long serialVersionUID = 1L;
+  @Serial private static final long serialVersionUID = 1L;
 
   private final String studioKey;
   private final String requiredVersion;

@@ -194,7 +194,7 @@ class PackBootstrapIT {
   @DisplayName("a second start installs nothing again, and leaves an admin's edit alone")
   void aSecondStartDoesNotOverwriteTheCatalogue() {
     jdbcTemplate.update(
-        "UPDATE studio SET sort_weight = 4242 WHERE studio_key = ?", MEDIA_STUDIOS.get(0));
+        "UPDATE studio SET sort_weight = 4242 WHERE studio_key = ?", MEDIA_STUDIOS.getFirst());
     provisioning.provisioned.clear();
 
     // A second PackBootstrap is a second start: the first instance settles and stops, which is
@@ -205,7 +205,7 @@ class PackBootstrapIT {
             jdbcTemplate.queryForObject(
                 "SELECT sort_weight FROM studio WHERE studio_key = ?",
                 Integer.class,
-                MEDIA_STUDIOS.get(0)))
+                MEDIA_STUDIOS.getFirst()))
         .as(
             "the catalogue is data an admin may change without a deploy; a bootstrap that"
                 + " re-applied every shipped bundle at every start would undo that edit")

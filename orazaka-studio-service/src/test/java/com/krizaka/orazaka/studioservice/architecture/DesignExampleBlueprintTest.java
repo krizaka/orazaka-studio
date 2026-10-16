@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 
 import com.krizaka.orazaka.studio.domain.model.Blueprint;
 import com.krizaka.orazaka.studio.domain.model.BlueprintStatus;
+import com.krizaka.orazaka.studio.domain.model.BlueprintStep;
 import com.krizaka.orazaka.studio.domain.model.StepKind;
 import com.krizaka.orazaka.studioservice.domain.port.BlueprintRepository;
 import com.krizaka.orazaka.test.architecture.Workspace;
@@ -112,7 +113,7 @@ class DesignExampleBlueprintTest {
   void exampleStepIdsObeyTheGrammar() throws IOException {
     Blueprint parsed = parse(extractExample());
 
-    List<String> ids = parsed.steps().stream().map(step -> step.id()).toList();
+    List<String> ids = parsed.steps().stream().map(BlueprintStep::id).toList();
     assertTrue(
         ids.stream().allMatch(id -> id.matches("^[a-z][a-z0-9-]{0,59}$")),
         () -> "step ids must be kebab-case, was: " + ids);

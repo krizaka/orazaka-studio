@@ -508,14 +508,14 @@ public class RunSagaService {
               // A fan-out step publishes a list; a single-shot one publishes its map directly, so
               // {{steps.x.field}} works without the author knowing which it was.
               Object existing = outputs.get(out);
-              if (existing == null) {
-                outputs.put(out, entry.getValue());
-              } else if (existing instanceof List<?> list) {
-                List<Object> grown = new ArrayList<>(list);
-                grown.add(entry.getValue());
-                outputs.put(out, grown);
-              } else {
-                outputs.put(out, new ArrayList<>(List.of(existing, entry.getValue())));
+              switch (existing) {
+                case null -> outputs.put(out, entry.getValue());
+                case List<?> list -> {
+                  List<Object> grown = new ArrayList<>(list);
+                  grown.add(entry.getValue());
+                  outputs.put(out, grown);
+                }
+                default -> outputs.put(out, new ArrayList<>(List.of(existing, entry.getValue())));
               }
             });
 

@@ -162,7 +162,7 @@ public class ComposerStudioService {
     }
     return Optional.of(
         new SingleInput(
-            blueprint.get().steps().get(0).featureKey(),
+            blueprint.get().steps().getFirst().featureKey(),
             key,
             holdsAnAsset ? ComposerStudio.InputKind.ASSET : ComposerStudio.InputKind.TEXT,
             holdsAnAsset ? proseInput(schema, key) : key));
@@ -193,7 +193,7 @@ public class ComposerStudioService {
                 candidates.add(property.getKey());
               }
             });
-    return candidates.size() == 1 ? candidates.get(0) : null;
+    return candidates.size() == 1 ? candidates.getFirst() : null;
   }
 
   /**

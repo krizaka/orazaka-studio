@@ -227,12 +227,11 @@ public class ContentPolicyService {
   }
 
   private static void collect(Object value, Set<String> out) {
-    if (value instanceof CharSequence s) {
-      out.add(s.toString());
-    } else if (value instanceof Map<?, ?> m) {
-      m.values().forEach(v -> collect(v, out));
-    } else if (value instanceof Iterable<?> it) {
-      it.forEach(v -> collect(v, out));
+    switch (value) {
+      case CharSequence s -> out.add(s.toString());
+      case Map<?, ?> m -> m.values().forEach(v -> collect(v, out));
+      case Iterable<?> it -> it.forEach(v -> collect(v, out));
+      case null, default -> {}
     }
   }
 }

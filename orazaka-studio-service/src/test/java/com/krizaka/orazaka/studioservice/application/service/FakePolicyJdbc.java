@@ -60,12 +60,12 @@ class FakePolicyJdbc extends JdbcTemplate {
       if (sql.contains("content_policy_tenant")) {
         // '*' rows first, then the actor's own, as the SQL orders them.
         for (String[] row : tenant) {
-          if (row[0].equals("*")) {
+          if ("*".equals(row[0])) {
             handler.processRow(rs(Map.of("label", row[1], "action", row[2])));
           }
         }
         for (String[] row : tenant) {
-          if (!row[0].equals("*") && row[0].equals(actor)) {
+          if (!"*".equals(row[0]) && row[0].equals(actor)) {
             handler.processRow(rs(Map.of("label", row[1], "action", row[2])));
           }
         }

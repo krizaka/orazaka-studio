@@ -1,5 +1,6 @@
 package com.krizaka.orazaka.studioservice.infrastructure.support;
 
+import java.io.Serial;
 import java.util.List;
 
 /**
@@ -10,7 +11,7 @@ import java.util.List;
  */
 public class OutputContractException extends RuntimeException {
 
-  private static final long serialVersionUID = 1L;
+  @Serial private static final long serialVersionUID = 1L;
 
   private final List<String> violations;
 

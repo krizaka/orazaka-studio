@@ -1,5 +1,6 @@
 package com.krizaka.orazaka.studio.domain.model;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -186,12 +187,19 @@ class RunScopeTest {
 
   @Test
   void assertValidGrammar_acceptsEverySupportedForm() {
-    RunScope.assertValidGrammar("{{item}} {{inputs.a}} {{config}} {{steps.a.b}} {{secrets.a:x}}");
+    assertDoesNotThrow(
+        () -> {
+          RunScope.assertValidGrammar(
+              "{{item}} {{inputs.a}} {{config}} {{steps.a.b}} {{secrets.a:x}}");
+        });
   }
 
   @Test
   void assertValidGrammar_toleratesTheAbsenceOfATemplate() {
-    RunScope.assertValidGrammar(null);
+    assertDoesNotThrow(
+        () -> {
+          RunScope.assertValidGrammar(null);
+        });
   }
 
   @Test

@@ -1,5 +1,6 @@
 package com.krizaka.orazaka.studioservice.domain.exception;
 
+import java.io.Serial;
 import java.util.UUID;
 
 /**
@@ -10,7 +11,7 @@ import java.util.UUID;
  */
 public class RunNotFoundException extends RuntimeException {
 
-  private static final long serialVersionUID = 1L;
+  @Serial private static final long serialVersionUID = 1L;
 
   private final UUID runId;
 

@@ -4,6 +4,7 @@ import com.krizaka.orazaka.jobs.domain.model.DataClass;
 import com.krizaka.orazaka.studio.domain.exception.StudioNotEntitledException;
 import com.krizaka.orazaka.studio.domain.model.Blueprint;
 import com.krizaka.orazaka.studio.domain.model.BlueprintOutput;
+import com.krizaka.orazaka.studio.domain.model.BlueprintStep;
 import com.krizaka.orazaka.studio.domain.model.InstallationStatus;
 import com.krizaka.orazaka.studio.domain.model.PackKind;
 import com.krizaka.orazaka.studio.domain.model.RegulatoryClass;
@@ -290,7 +291,7 @@ public class StudioRunService {
 
   private static List<String> providersOf(Blueprint blueprint) {
     return blueprint.steps().stream()
-        .map(step -> step.featureKey())
+        .map(BlueprintStep::featureKey)
         .filter(Objects::nonNull)
         .distinct()
         .toList();

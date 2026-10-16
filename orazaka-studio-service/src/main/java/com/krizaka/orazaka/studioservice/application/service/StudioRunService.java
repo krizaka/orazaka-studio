@@ -14,6 +14,7 @@ import com.krizaka.orazaka.studioservice.domain.exception.InstallationNotFoundEx
 import com.krizaka.orazaka.studioservice.domain.exception.RunNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.exception.StudioNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.exception.StudioNotInstalledException;
+import com.krizaka.orazaka.studioservice.domain.model.ContentDecision;
 import com.krizaka.orazaka.studioservice.domain.model.InstalledStudio;
 import com.krizaka.orazaka.studioservice.domain.model.RunArtefact;
 import com.krizaka.orazaka.studioservice.domain.model.RunDetail;
@@ -66,6 +67,7 @@ public class StudioRunService {
   private final RunAuditService runAuditService;
   private final StudioCatalogService catalogService;
   private final StudioAccessService accessService;
+  private final ContentPolicyService contentPolicy;
 
   public StudioRunService(
       JdbcTemplate jdbcTemplate,
@@ -80,7 +82,8 @@ public class StudioRunService {
       ColumnValueResolver columns,
       RunAuditService runAuditService,
       StudioCatalogService catalogService,
-      StudioAccessService accessService) {
+      StudioAccessService accessService,
+      ContentPolicyService contentPolicy) {
     this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "JdbcTemplate cannot be null");
     this.installationService = Objects.requireNonNull(installationService, "installations");
     this.blueprintRepository = Objects.requireNonNull(blueprintRepository, "blueprints");
@@ -95,6 +98,7 @@ public class StudioRunService {
     this.runAuditService = Objects.requireNonNull(runAuditService, "RunAuditService required");
     this.catalogService = Objects.requireNonNull(catalogService, "StudioCatalogService required");
     this.accessService = Objects.requireNonNull(accessService, "StudioAccessService required");
+    this.contentPolicy = Objects.requireNonNull(contentPolicy, "ContentPolicyService required");
   }
 
   /**
@@ -209,6 +213,9 @@ public class StudioRunService {
                 () -> new IllegalStateException("pinned version no longer exists: " + version));
 
     Map<String, Object> validated = validateInputs(blueprint, inputs);
+    // Before the hold, the row and any provider: a refused prompt costs nothing and reaches
+    // nothing.
+    contentPolicy.enforce(actorId, studioKey, validated, providersOf(blueprint));
     String correlationId = UUID.randomUUID().toString();
     String holdId =
         creditReservationService.hold(actorId, correlationId, blueprint.estimatedCredits());
@@ -254,6 +261,39 @@ public class StudioRunService {
 
     runSagaService.advance(runId);
     return find(runId, actorId).orElseThrow(() -> new RunNotFoundException(runId));
+  }
+
+  /**
+   * Dry-run of the content policy for a Studio's latest published version: classifies the inputs
+   * and says what a run would do — refuse, warn or allow — without holding credits, writing a run
+   * or reaching any provider.
+   *
+   * @param studioKey the Studio
+   * @param actorId the opaque actor
+   * @param inputs the would-be run inputs
+   * @return the decision
+   * @throws StudioNotFoundException when the key names no Studio or it has no published version
+   */
+  public ContentDecision checkPolicy(String studioKey, String actorId, Map<String, Object> inputs) {
+    String version =
+        catalogService
+            .latestPublished(studioKey)
+            .orElseThrow(() -> new StudioNotFoundException(studioKey))
+            .version();
+    Blueprint blueprint =
+        blueprintRepository
+            .find(studioKey, version)
+            .orElseThrow(() -> new StudioNotFoundException(studioKey));
+    return contentPolicy.check(
+        actorId, studioKey, inputs == null ? Map.of() : inputs, providersOf(blueprint));
+  }
+
+  private static List<String> providersOf(Blueprint blueprint) {
+    return blueprint.steps().stream()
+        .map(step -> step.featureKey())
+        .filter(Objects::nonNull)
+        .distinct()
+        .toList();
   }
 
   /**

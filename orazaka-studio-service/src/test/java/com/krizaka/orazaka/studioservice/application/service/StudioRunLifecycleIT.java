@@ -1089,7 +1089,8 @@ class StudioRunLifecycleIT {
         ColumnValueResolver columns,
         RunAuditService runAuditService,
         StudioCatalogService catalogService,
-        StudioAccessService accessService) {
+        StudioAccessService accessService,
+        ContentPolicyService contentPolicy) {
       return new StudioRunService(
           jdbcTemplate,
           installationService,
@@ -1103,7 +1104,17 @@ class StudioRunLifecycleIT {
           columns,
           runAuditService,
           catalogService,
-          accessService);
+          accessService,
+          contentPolicy);
+    }
+
+    @Bean
+    ContentPolicyService contentPolicyService(
+        JdbcTemplate jdbcTemplate, PlatformTransactionManager transactionManager) {
+      return new ContentPolicyService(
+          jdbcTemplate,
+          new com.krizaka.orazaka.studioservice.infrastructure.support.RulesContentClassifier(),
+          transactionManager);
     }
 
     @Bean

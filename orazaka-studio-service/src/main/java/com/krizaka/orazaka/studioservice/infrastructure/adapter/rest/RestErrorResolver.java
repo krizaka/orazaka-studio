@@ -5,12 +5,14 @@ import com.krizaka.orazaka.studio.domain.exception.BlueprintValidationException;
 import com.krizaka.orazaka.studio.domain.exception.StudioNotEntitledException;
 import com.krizaka.orazaka.studio.domain.exception.TurnConsentRequiredException;
 import com.krizaka.orazaka.studioservice.domain.exception.ConsentRequiredException;
+import com.krizaka.orazaka.studioservice.domain.exception.ContentPolicyRefusedException;
 import com.krizaka.orazaka.studioservice.domain.exception.InstallationNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.exception.PackInstallException;
 import com.krizaka.orazaka.studioservice.domain.exception.RunNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.exception.StudioIncludedException;
 import com.krizaka.orazaka.studioservice.domain.exception.StudioNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.exception.StudioNotInstalledException;
+import com.krizaka.orazaka.studioservice.domain.model.ContentDecision;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -108,6 +110,23 @@ public class RestErrorResolver {
     logger.info("Rejected request: {}", ex.getMessage());
     return ResponseEntity.badRequest()
         .body(Map.of(STATUS_KEY, "invalid_request", MESSAGE_KEY, String.valueOf(ex.getMessage())));
+  }
+
+  /**
+   * Maps a content-policy refusal to {@code 422} with the stable code {@code
+   * content.policy_refused}. The body names the labels and the rule, never the prompt.
+   *
+   * @param ex the refusal
+   * @return {@code 422}
+   */
+  @ExceptionHandler(ContentPolicyRefusedException.class)
+  public ResponseEntity<Map<String, Object>> handleContentPolicy(ContentPolicyRefusedException ex) {
+    return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+        .body(
+            Map.of(
+                "code", ContentDecision.REFUSED_CODE,
+                "rule", ex.decision().rule(),
+                "labels", ex.labels().stream().map(Enum::name).sorted().toList()));
   }
 
   /**

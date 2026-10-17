@@ -104,7 +104,8 @@ class StudioRunContentPolicyTest {
             mock(RunAuditService.class),
             catalog,
             access,
-            policy);
+            policy,
+            mock(FormSchemaService.class));
   }
 
   private static Map<String, Object> inputs(String fixture) {

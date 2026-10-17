@@ -38,7 +38,8 @@ class StudioRunCancelTest {
             mock(RunAuditService.class),
             mock(StudioCatalogService.class),
             mock(StudioAccessService.class),
-            mock(ContentPolicyService.class));
+            mock(ContentPolicyService.class),
+            mock(FormSchemaService.class));
   }
 
   @Test

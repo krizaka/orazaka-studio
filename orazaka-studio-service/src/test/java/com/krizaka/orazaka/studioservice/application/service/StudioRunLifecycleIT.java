@@ -1118,7 +1118,8 @@ class StudioRunLifecycleIT {
           runAuditService,
           catalogService,
           accessService,
-          contentPolicy);
+          contentPolicy,
+          new FormSchemaService(category -> java.util.Optional.empty(), objectMapper));
     }
 
     @Bean

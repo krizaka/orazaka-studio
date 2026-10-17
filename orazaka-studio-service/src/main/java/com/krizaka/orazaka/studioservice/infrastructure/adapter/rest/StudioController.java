@@ -2,6 +2,7 @@ package com.krizaka.orazaka.studioservice.infrastructure.adapter.rest;
 
 import com.krizaka.orazaka.studio.domain.model.Studio;
 import com.krizaka.orazaka.studioservice.application.service.ComposerStudioService;
+import com.krizaka.orazaka.studioservice.application.service.FormSchemaService;
 import com.krizaka.orazaka.studioservice.application.service.StudioAccessService;
 import com.krizaka.orazaka.studioservice.application.service.StudioCatalogService;
 import com.krizaka.orazaka.studioservice.domain.exception.StudioNotFoundException;
@@ -39,15 +40,19 @@ class StudioController {
   private final StudioCatalogService catalogService;
   private final StudioAccessService accessService;
   private final ComposerStudioService composerStudioService;
+  private final FormSchemaService formSchemaService;
 
   StudioController(
       StudioCatalogService catalogService,
       StudioAccessService accessService,
-      ComposerStudioService composerStudioService) {
+      ComposerStudioService composerStudioService,
+      FormSchemaService formSchemaService) {
     this.catalogService = Objects.requireNonNull(catalogService, "StudioCatalogService required");
     this.accessService = Objects.requireNonNull(accessService, "StudioAccessService required");
     this.composerStudioService =
         Objects.requireNonNull(composerStudioService, "ComposerStudioService required");
+    this.formSchemaService =
+        Objects.requireNonNull(formSchemaService, "FormSchemaService required");
   }
 
   /**
@@ -94,6 +99,10 @@ class StudioController {
   /**
    * One Studio's detail, including the schemas its forms are generated from.
    *
+   * <p>The input schema is the <i>form</i>: each closed field fed by the catalogue (a blueprint's
+   * {@code x-options}) arrives with its choices, labels, hints and default, so no client types or
+   * hard-codes a list.
+   *
    * @param studioKey the Studio's key
    * @param locale the caller's locale
    * @param actor the authenticated caller
@@ -117,7 +126,12 @@ class StudioController {
         studio,
         catalogService.description(studioKey, locale).orElse(null),
         latest.map(BlueprintVersion::estimatedCredits).orElse(0L),
-        version == null ? null : catalogService.inputSchema(studioKey, version).orElse(null),
+        version == null
+            ? null
+            : catalogService
+                .inputSchema(studioKey, version)
+                .map(formSchemaService::forForm)
+                .orElse(null),
         version == null ? null : catalogService.configSchema(studioKey, version).orElse(null),
         accessService.evaluate(studio, actor.getSubject()));
   }

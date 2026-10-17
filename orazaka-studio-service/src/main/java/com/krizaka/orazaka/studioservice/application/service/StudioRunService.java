@@ -391,9 +391,6 @@ public class StudioRunService {
     settlementService.releaseAbandoned(run.holdId(), "cancelled by actor");
   }
 
-  /** Routing key an executor hears to stop a job; the id is its last segment. */
-  static final String CANCEL_KEY_PREFIX = "job.cancel.";
-
   private List<String> inFlightJobIds(UUID runId) {
     return jdbcTemplate.query(
         "SELECT job_id FROM studio_run_step WHERE run_id = ? AND job_id IS NOT NULL"
@@ -406,12 +403,7 @@ public class StudioRunService {
 
   void publishStop(UUID runId, List<String> jobIds) {
     for (String jobId : jobIds) {
-      outboxService.appendCommand(
-          runId.toString(),
-          "orazaka.jobs",
-          CANCEL_KEY_PREFIX + jobId,
-          jobId + "-cancel",
-          Map.of("jobId", jobId));
+      runSagaService.stop(runId, jobId);
     }
   }
 

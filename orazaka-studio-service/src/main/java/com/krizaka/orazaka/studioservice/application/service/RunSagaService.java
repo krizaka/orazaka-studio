@@ -72,6 +72,16 @@ public class RunSagaService {
   private final MeterRegistry meterRegistry;
   private final RunAuditService runAuditService;
 
+  /**
+   * Tells the executor of a step to stop (a cancelled run).
+   *
+   * @param runId the run
+   * @param jobId the step's job
+   */
+  public void stop(UUID runId, String jobId) {
+    stepExecutionClient.cancel(runId, jobId);
+  }
+
   public RunSagaService(
       JdbcTemplate jdbcTemplate,
       BlueprintRepository blueprintRepository,

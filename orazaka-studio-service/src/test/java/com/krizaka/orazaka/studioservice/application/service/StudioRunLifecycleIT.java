@@ -186,6 +186,7 @@ class StudioRunLifecycleIT {
     jdbcTemplate.update("DELETE FROM processed_messages");
     jdbcTemplate.update("DELETE FROM studio_outbox");
     executor.dispatched.clear();
+    executor.stopped.clear();
     credits.released.clear();
     credits.aggregateSettlements.clear();
   }

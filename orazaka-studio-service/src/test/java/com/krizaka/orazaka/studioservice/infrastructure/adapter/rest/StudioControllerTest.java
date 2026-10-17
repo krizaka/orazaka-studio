@@ -13,6 +13,7 @@ import com.krizaka.orazaka.studio.domain.model.Studio;
 import com.krizaka.orazaka.studio.domain.model.StudioPricing;
 import com.krizaka.orazaka.studio.domain.model.StudioStatus;
 import com.krizaka.orazaka.studioservice.application.service.ComposerStudioService;
+import com.krizaka.orazaka.studioservice.application.service.FormSchemaService;
 import com.krizaka.orazaka.studioservice.application.service.StudioAccessService;
 import com.krizaka.orazaka.studioservice.application.service.StudioCatalogService;
 import com.krizaka.orazaka.studioservice.domain.exception.StudioNotFoundException;
@@ -29,6 +30,7 @@ import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.jwt.Jwt;
+import tools.jackson.databind.ObjectMapper;
 
 class StudioControllerTest {
 
@@ -38,7 +40,27 @@ class StudioControllerTest {
   private final StudioAccessService accessService = mock(StudioAccessService.class);
   private final ComposerStudioService composerStudioService = mock(ComposerStudioService.class);
   private final StudioController controller =
-      new StudioController(catalogService, accessService, composerStudioService);
+      new StudioController(
+          catalogService,
+          accessService,
+          composerStudioService,
+          new FormSchemaService(
+              category ->
+                  Optional.of(
+                      List.of(
+                          new com.krizaka.orazaka.studioservice.domain.model.ModelChoice(
+                              "sd-hosted",
+                              "SD hosted",
+                              "p",
+                              "cloud",
+                              "fast",
+                              8,
+                              8,
+                              null,
+                              true,
+                              null,
+                              true))),
+              new ObjectMapper()));
 
   private static final Jwt ACTOR_JWT =
       Jwt.withTokenValue("t").header("alg", "HS256").subject(ACTOR).build();
@@ -171,5 +193,36 @@ class StudioControllerTest {
               assertThat(version.version()).isEqualTo("1.0.0");
               assertThat(version.changelog()).isEqualTo("Vitrine initiale");
             });
+  }
+
+  @Test
+  @DisplayName(
+      "The detail's input schema is the form: catalogue-fed fields arrive with their choices")
+  void detailCarriesTheFormWithTheCataloguesChoices() {
+    Studio image = studio("image-generation", StudioPricing.FREE, null);
+    when(catalogService.find("image-generation", "fr")).thenReturn(Optional.of(image));
+    when(catalogService.latestPublished("image-generation"))
+        .thenReturn(
+            Optional.of(
+                new BlueprintVersion(
+                    "image-generation",
+                    "1.3.0",
+                    BlueprintStatus.PUBLISHED,
+                    200,
+                    "x",
+                    Instant.parse("2026-10-17T10:00:00Z"))));
+    when(catalogService.inputSchema("image-generation", "1.3.0"))
+        .thenReturn(
+            Optional.of(
+                "{\"properties\":{\"model\":{\"type\":\"string\","
+                    + "\"x-options\":{\"source\":\"models\",\"category\":\"image\"}}}}"));
+    when(accessService.evaluate(any(), anyString()))
+        .thenReturn(new StudioAccess(false, LockReason.NONE, null));
+
+    StudioDetailResponse detail = controller.find("image-generation", "fr", ACTOR_JWT);
+
+    assertThat(detail.inputSchema())
+        .contains("\"const\":\"sd-hosted\"")
+        .contains("\"default\":\"sd-hosted\"");
   }
 }

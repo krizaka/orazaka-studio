@@ -69,6 +69,7 @@ public class StudioRunService {
   private final StudioCatalogService catalogService;
   private final StudioAccessService accessService;
   private final ContentPolicyService contentPolicy;
+  private final FormSchemaService formSchema;
 
   public StudioRunService(
       JdbcTemplate jdbcTemplate,
@@ -84,7 +85,8 @@ public class StudioRunService {
       RunAuditService runAuditService,
       StudioCatalogService catalogService,
       StudioAccessService accessService,
-      ContentPolicyService contentPolicy) {
+      ContentPolicyService contentPolicy,
+      FormSchemaService formSchema) {
     this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "JdbcTemplate cannot be null");
     this.installationService = Objects.requireNonNull(installationService, "installations");
     this.blueprintRepository = Objects.requireNonNull(blueprintRepository, "blueprints");
@@ -100,6 +102,7 @@ public class StudioRunService {
     this.catalogService = Objects.requireNonNull(catalogService, "StudioCatalogService required");
     this.accessService = Objects.requireNonNull(accessService, "StudioAccessService required");
     this.contentPolicy = Objects.requireNonNull(contentPolicy, "ContentPolicyService required");
+    this.formSchema = Objects.requireNonNull(formSchema, "FormSchemaService required");
   }
 
   /**
@@ -461,6 +464,9 @@ public class StudioRunService {
         throw new IllegalArgumentException("missing required inputs: " + missing);
       }
     }
+    // A value outside a field's closed set (a model id that does not exist, an aspect never
+    // offered) is refused here, before a credit is held, naming the choices.
+    formSchema.requireClosedSets(blueprint.inputSchema(), supplied);
     return Map.copyOf(supplied);
   }
 

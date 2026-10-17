@@ -19,4 +19,15 @@ public interface StepExecutionClient {
    * @return the job id the outcome will arrive under
    */
   String submit(StepDispatch dispatch);
+
+  /**
+   * Asks the executor of a submitted step to stop it.
+   *
+   * <p>Cooperative, never a kill: a worker ends at its next step boundary and a job still waiting
+   * in a lane is dropped when it arrives. Whatever outcome still arrives is discarded by the saga.
+   *
+   * @param runId the run the step belongs to (the aggregate the command is filed under)
+   * @param jobId the job to stop
+   */
+  void cancel(java.util.UUID runId, String jobId);
 }

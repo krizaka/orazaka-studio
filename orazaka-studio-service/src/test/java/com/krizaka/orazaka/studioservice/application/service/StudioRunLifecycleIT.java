@@ -186,6 +186,7 @@ class StudioRunLifecycleIT {
     jdbcTemplate.update("DELETE FROM processed_messages");
     jdbcTemplate.update("DELETE FROM studio_outbox");
     executor.dispatched.clear();
+    executor.stopped.clear();
     credits.released.clear();
     credits.aggregateSettlements.clear();
   }
@@ -558,6 +559,10 @@ class StudioRunLifecycleIT {
     assertTrue(credits.released.contains("hold-1"));
     assertTrue(
         cancelled.steps().stream().allMatch(step -> step.status() == RunStepStatus.CANCELLED));
+    // The executors are told, not left to finish: one job.cancel.<id> per dispatched step.
+    assertEquals(
+        executor.dispatched.stream().sorted().toList(),
+        executor.stopped.stream().sorted().toList());
   }
 
   // ── §15: the immutability trigger is a schema claim ───────────────────────
@@ -865,6 +870,13 @@ class StudioRunLifecycleIT {
 
   /** Records what the engine submitted, so the DAG's decisions are observable without a broker. */
   static class RecordingStepExecutionClient implements StepExecutionClient {
+    final List<String> stopped = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    @Override
+    public void cancel(UUID runId, String jobId) {
+      stopped.add(jobId);
+    }
+
     final List<String> dispatched = new ArrayList<>();
     Map<String, Object> lastInputs = Map.of();
 

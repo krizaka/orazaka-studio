@@ -359,9 +359,9 @@ public class StudioRunService {
   /**
    * Cancels a run and releases its hold.
    *
-   * <p>In-flight jobs are allowed to finish and their results discarded: killing a running MLX job
-   * is not free either, and a half-killed accelerator job is worse than a wasted one (ADR-034
-   * §7.1).
+   * <p>In-flight jobs are told to stop ({@code job.cancel.<id>}): a worker ends at its next step
+   * boundary, never by a kill — a half-killed accelerator job is worse than a wasted one (ADR-034
+   * §7.1) — and a job still queued is dropped. Whatever still arrives is discarded.
    *
    * @param runId the run
    * @param actorId the opaque billable subject
@@ -373,6 +373,10 @@ public class StudioRunService {
     if (run.finishedAt() != null) {
       return;
     }
+    // Told to the executors first, in this transaction (outbox): a worker that is rendering stops
+    // within one step, a job still queued is dropped on arrival. The hold is released below either
+    // way.
+    publishStop(runId, inFlightJobIds(runId));
     jdbcTemplate.update(
         "UPDATE studio_run SET status = ?, finished_at = now() WHERE id = ? AND finished_at IS NULL",
         RunStatus.CANCELLED.name(),
@@ -385,6 +389,22 @@ public class StudioRunService {
         RunStepStatus.RUNNING.name());
     // One author closes a hold (ADR-059). This method decides the run is cancelled.
     settlementService.releaseAbandoned(run.holdId(), "cancelled by actor");
+  }
+
+  private List<String> inFlightJobIds(UUID runId) {
+    return jdbcTemplate.query(
+        "SELECT job_id FROM studio_run_step WHERE run_id = ? AND job_id IS NOT NULL"
+            + " AND status IN (?, ?)",
+        (rs, rowNum) -> rs.getString(1),
+        runId,
+        RunStepStatus.PENDING.name(),
+        RunStepStatus.RUNNING.name());
+  }
+
+  void publishStop(UUID runId, List<String> jobIds) {
+    for (String jobId : jobIds) {
+      runSagaService.stop(runId, jobId);
+    }
   }
 
   private void enforceConcurrencyCap(String actorId) {
@@ -445,18 +465,60 @@ public class StudioRunService {
   }
 
   private List<RunStepView> stepsOf(UUID runId) {
+    String studioKey =
+        jdbcTemplate
+            .query(
+                "SELECT studio_key FROM studio_run WHERE id = ?",
+                (rs, rowNum) -> rs.getString(1),
+                runId)
+            .stream()
+            .findFirst()
+            .orElse(null);
     return jdbcTemplate.query(
-        "SELECT step_id, ordinal, job_id, status, attempts, error_message FROM studio_run_step"
-            + " WHERE run_id = ? ORDER BY started_at NULLS FIRST, step_id, ordinal",
-        (rs, rowNum) ->
-            new RunStepView(
-                rs.getString("step_id"),
-                rs.getInt("ordinal"),
-                rs.getString("job_id"),
-                RunStepStatus.valueOf(rs.getString("status")),
-                rs.getInt("attempts"),
-                rs.getString("error_message")),
+        "SELECT step_id, ordinal, job_id, status, attempts, error_message, started_at"
+            + " FROM studio_run_step WHERE run_id = ?"
+            + " ORDER BY started_at NULLS FIRST, step_id, ordinal",
+        (rs, rowNum) -> {
+          RunStepStatus status = RunStepStatus.valueOf(rs.getString("status"));
+          String stepId = rs.getString("step_id");
+          long[] estimate =
+              status == RunStepStatus.RUNNING && studioKey != null
+                  ? medianWallTime(studioKey, stepId)
+                  : new long[] {0, 0};
+          return new RunStepView(
+              stepId,
+              rs.getInt("ordinal"),
+              rs.getString("job_id"),
+              status,
+              rs.getInt("attempts"),
+              rs.getString("error_message"),
+              columns.instantAt(rs, "started_at"),
+              estimate[1] >= RunStepView.MIN_SAMPLES ? estimate[0] : null,
+              (int) estimate[1]);
+        },
         runId);
+  }
+
+  /**
+   * The median wall time of the last successful runs of this step in this Studio, measured from
+   * dispatch to outcome (queue wait included: it is what the person waits). Nothing is assumed:
+   * with fewer than {@link RunStepView#MIN_SAMPLES} finished runs the caller shows no estimate.
+   *
+   * @return {median in ms, sample count}
+   */
+  private long[] medianWallTime(String studioKey, String stepId) {
+    return jdbcTemplate.query(
+        "SELECT COALESCE(percentile_cont(0.5) WITHIN GROUP (ORDER BY ms), 0), COUNT(*) FROM ("
+            + " SELECT EXTRACT(EPOCH FROM (s.finished_at - s.started_at)) * 1000 AS ms"
+            + " FROM studio_run_step s JOIN studio_run r ON r.id = s.run_id"
+            + " WHERE r.studio_key = ? AND r.data_class = 'STANDARD' AND s.step_id = ? AND s.status = ?"
+            + " AND s.started_at IS NOT NULL AND s.finished_at IS NOT NULL"
+            + " ORDER BY s.finished_at DESC LIMIT 20) recent",
+        rs ->
+            rs.next() ? new long[] {Math.round(rs.getDouble(1)), rs.getLong(2)} : new long[] {0, 0},
+        studioKey,
+        stepId,
+        RunStepStatus.SUCCEEDED.name());
   }
 
   /**

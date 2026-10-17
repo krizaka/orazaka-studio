@@ -45,6 +45,9 @@ class AmqpStepExecutionAdapter implements StepExecutionClient {
    */
   private static final String JOBS_EXCHANGE = "orazaka.jobs";
 
+  /** The routing key an executor hears to stop a job; the id is its last segment. */
+  static final String CANCEL_KEY_PREFIX = "job.cancel.";
+
   /**
    * Connector steps go to the automation plane, which owns the actor's stored credentials. The
    * Studio service never sees a secret: it names the connector and the automation service resolves
@@ -173,6 +176,23 @@ class AmqpStepExecutionAdapter implements StepExecutionClient {
         jobId,
         routingKey);
     return jobId;
+  }
+
+  /**
+   * {@inheritDoc}
+   *
+   * <p>{@code job.cancel.<jobId>} on the jobs exchange, through the outbox like every command:
+   * every executor hears it on a queue of its own and only the one running (or holding) the job
+   * acts.
+   */
+  @Override
+  public void cancel(UUID runId, String jobId) {
+    outboxService.appendCommand(
+        runId.toString(),
+        JOBS_EXCHANGE,
+        CANCEL_KEY_PREFIX + jobId,
+        jobId + "-cancel",
+        Map.of("jobId", jobId));
   }
 
   /**

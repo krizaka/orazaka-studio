@@ -230,4 +230,19 @@ class AmqpStepExecutionAdapterTest {
     assertThat(payload).doesNotContainKey(JobCommand.SCOPE_REFUSED_TERMS_KEY);
     assertThat(payload).doesNotContainKey(JobCommand.SCOPE_REFUSAL_KEY);
   }
+
+  @Test
+  void cancel_putsAStopCommandOnTheJobsExchange_underTheRun() {
+    java.util.UUID run = java.util.UUID.randomUUID();
+
+    adapter.cancel(run, "job-77");
+
+    org.mockito.Mockito.verify(outboxService)
+        .appendCommand(
+            run.toString(),
+            "orazaka.jobs",
+            "job.cancel.job-77",
+            "job-77-cancel",
+            Map.of("jobId", "job-77"));
+  }
 }

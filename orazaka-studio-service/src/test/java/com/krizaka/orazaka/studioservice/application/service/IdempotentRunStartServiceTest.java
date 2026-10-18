@@ -24,7 +24,7 @@ import org.junit.jupiter.api.Test;
  * (orazaka#189 follow-up, ADR-083): a client whose connection dropped after the engine accepted the
  * run can retry without paying twice.
  */
-class IdempotentRunStarterTest {
+class IdempotentRunStartServiceTest {
 
   private static final String ACTOR = "actor-1";
   private static final String SCOPE = "studio:compliance-check";
@@ -32,18 +32,18 @@ class IdempotentRunStarterTest {
   private final InMemoryStore store = new InMemoryStore();
   private final StudioRunService runs = mock(StudioRunService.class);
   private final AtomicInteger started = new AtomicInteger();
-  private IdempotentRunStarter starter;
+  private IdempotentRunStartService starter;
   private final UUID firstRun = UUID.randomUUID();
   private final RunDetail first = mock(RunDetail.class);
 
   @BeforeEach
   void wire() {
-    starter = new IdempotentRunStarter(store, runs);
+    starter = new IdempotentRunStartService(store, runs);
     when(first.id()).thenReturn(firstRun);
     when(runs.find(any(), any())).thenReturn(Optional.of(first));
   }
 
-  private IdempotentRunStarter.Started start(String key, Map<String, Object> inputs) {
+  private IdempotentRunStartService.Started start(String key, Map<String, Object> inputs) {
     return starter.start(
         SCOPE,
         ACTOR,
@@ -69,8 +69,8 @@ class IdempotentRunStarterTest {
   @Test
   @DisplayName("the same key and the same request answer the same run, started once")
   void sameKeySameRunStartedOnce() {
-    IdempotentRunStarter.Started one = start("k-1", Map.of("document", "lease"));
-    IdempotentRunStarter.Started two = start("k-1", Map.of("document", "lease"));
+    IdempotentRunStartService.Started one = start("k-1", Map.of("document", "lease"));
+    IdempotentRunStartService.Started two = start("k-1", Map.of("document", "lease"));
 
     assertThat(started).hasValue(1);
     assertThat(one.replayed()).isFalse();
@@ -89,7 +89,7 @@ class IdempotentRunStarterTest {
     b.put("x", 1);
 
     start("k-2", a);
-    IdempotentRunStarter.Started again = start("k-2", b);
+    IdempotentRunStartService.Started again = start("k-2", b);
 
     assertThat(again.replayed()).isTrue();
     assertThat(started).hasValue(1);
@@ -155,7 +155,7 @@ class IdempotentRunStarterTest {
                     }))
         .isInstanceOf(IllegalStateException.class);
 
-    IdempotentRunStarter.Started retry = start("k-7", Map.of());
+    IdempotentRunStartService.Started retry = start("k-7", Map.of());
 
     assertThat(retry.replayed()).isFalse();
     assertThat(started).hasValue(1);

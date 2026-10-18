@@ -32,7 +32,7 @@ import tools.jackson.databind.ObjectMapper;
  * nothing and rolls back: the retry then starts for real.
  */
 @Service
-public class IdempotentRunStarter {
+public class IdempotentRunStartService {
 
   private static final Pattern VALID_KEY = Pattern.compile("[\\x21-\\x7E]{1,255}");
 
@@ -40,7 +40,7 @@ public class IdempotentRunStarter {
   private final StudioRunService runs;
   private final ObjectMapper json = new ObjectMapper();
 
-  public IdempotentRunStarter(RunIdempotencyStore store, StudioRunService runs) {
+  public IdempotentRunStartService(RunIdempotencyStore store, StudioRunService runs) {
     this.store = Objects.requireNonNull(store, "RunIdempotencyStore cannot be null");
     this.runs = Objects.requireNonNull(runs, "StudioRunService cannot be null");
   }

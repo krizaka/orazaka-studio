@@ -1,6 +1,6 @@
 package com.krizaka.orazaka.studioservice.infrastructure.adapter.rest;
 
-import com.krizaka.orazaka.studioservice.application.service.IdempotentRunStarter;
+import com.krizaka.orazaka.studioservice.application.service.IdempotentRunStartService;
 import com.krizaka.orazaka.studioservice.application.service.StudioRunService;
 import com.krizaka.orazaka.studioservice.domain.exception.RunNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.model.ContentDecision;
@@ -45,14 +45,14 @@ class StudioRunController {
   static final String IDEMPOTENT_REPLAYED = "Idempotent-Replayed";
 
   private final StudioRunService runService;
-  private final IdempotentRunStarter starter;
+  private final IdempotentRunStartService starter;
 
-  StudioRunController(StudioRunService runService, IdempotentRunStarter starter) {
+  StudioRunController(StudioRunService runService, IdempotentRunStartService starter) {
     this.runService = Objects.requireNonNull(runService, "StudioRunService cannot be null");
-    this.starter = Objects.requireNonNull(starter, "IdempotentRunStarter cannot be null");
+    this.starter = Objects.requireNonNull(starter, "IdempotentRunStartService cannot be null");
   }
 
-  private ResponseEntity<RunResponse> accepted(IdempotentRunStarter.Started started) {
+  private ResponseEntity<RunResponse> accepted(IdempotentRunStartService.Started started) {
     ResponseEntity.BodyBuilder response = ResponseEntity.accepted();
     if (started.replayed()) {
       response.header(IDEMPOTENT_REPLAYED, "true");

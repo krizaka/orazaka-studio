@@ -1,5 +1,7 @@
 package com.krizaka.orazaka.studioservice.domain.exception;
 
+import java.io.Serial;
+
 /**
  * An actor already watches as many runs as the platform allows (the {@code
  * run.max-streams-per-actor} row): every open stream holds a connection and a thread, so the number
@@ -7,7 +9,7 @@ package com.krizaka.orazaka.studioservice.domain.exception;
  */
 public class TooManyRunStreamsException extends RuntimeException {
 
-  private static final long serialVersionUID = 1L;
+  @Serial private static final long serialVersionUID = 1L;
 
   private final int limit;
 

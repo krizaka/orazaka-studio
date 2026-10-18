@@ -202,6 +202,40 @@ class StudioRunLifecycleIT {
         install(), ACTOR, Map.of("photos", List.of("p1", "p2"), "trade", "plombier"));
   }
 
+  @Test
+  @DisplayName(
+      "[ADR-083] one run per (actor, Idempotency-Key): the index refuses a second, the lock runs")
+  void idempotencyKeyIsUniquePerActor() {
+    UUID installation = install();
+    RunDetail first =
+        runService.start(installation, ACTOR, Map.of("photos", List.of("p1"), "trade", "a"));
+    RunDetail second =
+        runService.start(installation, ACTOR, Map.of("photos", List.of("p1"), "trade", "b"));
+
+    jdbcTemplate.update(
+        "UPDATE studio_run SET idempotency_key = 'k-1', request_fingerprint = 'f' WHERE id = ?",
+        first.id());
+
+    assertThrows(
+        org.springframework.dao.DuplicateKeyException.class,
+        () ->
+            jdbcTemplate.update(
+                "UPDATE studio_run SET idempotency_key = 'k-1', request_fingerprint = 'f'"
+                    + " WHERE id = ?",
+                second.id()));
+    // Another actor may reuse the key: the key belongs to its actor.
+    jdbcTemplate.update(
+        "INSERT INTO studio_run (id, actor_id, studio_key, blueprint_version, status,"
+            + " correlation_id, idempotency_key, request_fingerprint)"
+            + " VALUES (gen_random_uuid(), 'someone-else', ?, '1.0.0', 'RUNNING', 'c', 'k-1', 'f')",
+        STUDIO_KEY);
+    // The advisory lock the store takes is plain SQL on this server.
+    jdbcTemplate.query(
+        "SELECT pg_advisory_xact_lock(hashtextextended(?, 0))",
+        (org.springframework.jdbc.core.RowCallbackHandler) rs -> {},
+        "studio-run-idempotency:1:xk-1");
+  }
+
   // ── §15: install → run → step outcomes → settle ───────────────────────────
 
   @Test

@@ -6,6 +6,7 @@ import com.krizaka.orazaka.studio.domain.exception.StudioNotEntitledException;
 import com.krizaka.orazaka.studio.domain.exception.TurnConsentRequiredException;
 import com.krizaka.orazaka.studioservice.domain.exception.ConsentRequiredException;
 import com.krizaka.orazaka.studioservice.domain.exception.ContentPolicyRefusedException;
+import com.krizaka.orazaka.studioservice.domain.exception.IdempotencyKeyReusedException;
 import com.krizaka.orazaka.studioservice.domain.exception.InstallationNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.exception.PackInstallException;
 import com.krizaka.orazaka.studioservice.domain.exception.RunNotFoundException;
@@ -110,6 +111,19 @@ public class RestErrorResolver {
     logger.info("Rejected request: {}", ex.getMessage());
     return ResponseEntity.badRequest()
         .body(Map.of(STATUS_KEY, "invalid_request", MESSAGE_KEY, String.valueOf(ex.getMessage())));
+  }
+
+  /**
+   * Maps an {@code Idempotency-Key} reused for a different request to {@code 422}.
+   *
+   * @param ex the refusal
+   * @return {@code 422} with the stable code {@code idempotency_key_reused}
+   */
+  @ExceptionHandler(IdempotencyKeyReusedException.class)
+  public ResponseEntity<Map<String, Object>> handleIdempotencyKeyReused(
+      IdempotencyKeyReusedException ex) {
+    return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+        .body(Map.of(STATUS_KEY, "idempotency_key_reused", MESSAGE_KEY, ex.getMessage()));
   }
 
   /**

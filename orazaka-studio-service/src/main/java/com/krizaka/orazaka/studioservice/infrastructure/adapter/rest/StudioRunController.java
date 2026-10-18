@@ -1,5 +1,6 @@
 package com.krizaka.orazaka.studioservice.infrastructure.adapter.rest;
 
+import com.krizaka.orazaka.studioservice.application.service.IdempotentRunStartService;
 import com.krizaka.orazaka.studioservice.application.service.StudioRunService;
 import com.krizaka.orazaka.studioservice.domain.exception.RunNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.model.ContentDecision;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -34,10 +36,28 @@ class StudioRunController {
 
   private static final int DEFAULT_HISTORY_LIMIT = 50;
 
-  private final StudioRunService runService;
+  /** The header a client sets to make a retry of a run start safe (ADR-083). */
+  static final String IDEMPOTENCY_KEY = "Idempotency-Key";
 
-  StudioRunController(StudioRunService runService) {
+  /**
+   * Set to {@code true} on an answer that replays the run an earlier request with this key started.
+   */
+  static final String IDEMPOTENT_REPLAYED = "Idempotent-Replayed";
+
+  private final StudioRunService runService;
+  private final IdempotentRunStartService starter;
+
+  StudioRunController(StudioRunService runService, IdempotentRunStartService starter) {
     this.runService = Objects.requireNonNull(runService, "StudioRunService cannot be null");
+    this.starter = Objects.requireNonNull(starter, "IdempotentRunStartService cannot be null");
+  }
+
+  private ResponseEntity<RunResponse> accepted(IdempotentRunStartService.Started started) {
+    ResponseEntity.BodyBuilder response = ResponseEntity.accepted();
+    if (started.replayed()) {
+      response.header(IDEMPOTENT_REPLAYED, "true");
+    }
+    return response.body(RunResponse.from(started.run()));
   }
 
   /**
@@ -45,19 +65,26 @@ class StudioRunController {
    *
    * @param installationId the installation to execute
    * @param request the actor's answers to the run form
+   * @param idempotencyKey the optional {@code Idempotency-Key}: the same key and request answer the
+   *     run it already started, flagged {@code Idempotent-Replayed: true}
    * @param actor the authenticated caller
-   * @return {@code 202} with the accepted run; {@code 402} when the estimate is unaffordable
+   * @return {@code 202} with the accepted run; {@code 402} when the estimate is unaffordable;
+   *     {@code 422} when the key started a different request
    */
   @PostMapping("/installations/{installationId}/runs")
   ResponseEntity<RunResponse> start(
       @PathVariable UUID installationId,
       @RequestBody(required = false) RunRequest request,
+      @RequestHeader(value = IDEMPOTENCY_KEY, required = false) String idempotencyKey,
       @AuthenticationPrincipal Jwt actor) {
     RunRequest resolved = request == null ? new RunRequest(null) : request;
-    return ResponseEntity.accepted()
-        .body(
-            RunResponse.from(
-                runService.start(installationId, actor.getSubject(), resolved.inputs())));
+    return accepted(
+        starter.start(
+            "installation:" + installationId,
+            actor.getSubject(),
+            resolved.inputs(),
+            idempotencyKey,
+            () -> runService.start(installationId, actor.getSubject(), resolved.inputs())));
   }
 
   /**
@@ -69,6 +96,7 @@ class StudioRunController {
    *
    * @param studioKey the Studio to run
    * @param request the actor's answers to the run form
+   * @param idempotencyKey the optional {@code Idempotency-Key}, as on the installation entry
    * @param actor the authenticated caller
    * @return {@code 202} with the accepted run
    */
@@ -76,10 +104,16 @@ class StudioRunController {
   ResponseEntity<RunResponse> startStudio(
       @PathVariable String studioKey,
       @RequestBody(required = false) RunRequest request,
+      @RequestHeader(value = IDEMPOTENCY_KEY, required = false) String idempotencyKey,
       @AuthenticationPrincipal Jwt actor) {
     RunRequest resolved = request == null ? new RunRequest(null) : request;
-    return ResponseEntity.accepted()
-        .body(RunResponse.from(runService.start(studioKey, actor.getSubject(), resolved.inputs())));
+    return accepted(
+        starter.start(
+            "studio:" + studioKey,
+            actor.getSubject(),
+            resolved.inputs(),
+            idempotencyKey,
+            () -> runService.start(studioKey, actor.getSubject(), resolved.inputs())));
   }
 
   /**

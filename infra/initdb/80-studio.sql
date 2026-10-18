@@ -285,6 +285,11 @@ CREATE TABLE studio_run (
     -- its members here would be the same closed set written twice. NULL reads as EXECUTOR_FAULT
     -- — release the hold, blame nobody.
     failure_cause     VARCHAR(32),
+    -- ADR-083. The caller's Idempotency-Key and the fingerprint of the request that carried it:
+    -- the same key + the same request answers this run instead of starting another. Nullable (most
+    -- callers send none); the key lives and dies with the run, so retention needs no second sweep.
+    idempotency_key     VARCHAR(255),
+    request_fingerprint VARCHAR(64),
     started_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
     finished_at       TIMESTAMPTZ,
     CONSTRAINT ck_run_data_class CHECK (data_class IN ('STANDARD','SENSITIVE','REGULATED')),
@@ -298,6 +303,9 @@ CREATE TABLE studio_run (
 -- The sweeper's second window and the analytics exclusion both filter on this.
 CREATE INDEX idx_run_data_class ON studio_run(data_class, finished_at) WHERE data_class <> 'STANDARD';
 CREATE INDEX idx_studio_run_failure_cause ON studio_run(failure_cause) WHERE failure_cause IS NOT NULL;
+-- The backstop of the advisory lock (ADR-083): one run per (actor, key), whatever the code does.
+CREATE UNIQUE INDEX ux_studio_run_idempotency ON studio_run(actor_id, idempotency_key)
+    WHERE idempotency_key IS NOT NULL;
 
 
 -- ─────────────────────────────────────────────────────────────────────────────

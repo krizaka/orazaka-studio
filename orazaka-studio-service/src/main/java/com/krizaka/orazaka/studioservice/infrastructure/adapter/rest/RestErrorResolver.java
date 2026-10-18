@@ -13,6 +13,7 @@ import com.krizaka.orazaka.studioservice.domain.exception.RunNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.exception.StudioIncludedException;
 import com.krizaka.orazaka.studioservice.domain.exception.StudioNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.exception.StudioNotInstalledException;
+import com.krizaka.orazaka.studioservice.domain.exception.TooManyRunStreamsException;
 import com.krizaka.orazaka.studioservice.domain.model.ContentDecision;
 import java.util.HashMap;
 import java.util.List;
@@ -111,6 +112,27 @@ public class RestErrorResolver {
     logger.info("Rejected request: {}", ex.getMessage());
     return ResponseEntity.badRequest()
         .body(Map.of(STATUS_KEY, "invalid_request", MESSAGE_KEY, String.valueOf(ex.getMessage())));
+  }
+
+  /**
+   * Maps too many open run streams to {@code 429} with {@code Retry-After}.
+   *
+   * @param ex the refusal
+   * @return {@code 429} with the stable code {@code too_many_run_streams}
+   */
+  @ExceptionHandler(TooManyRunStreamsException.class)
+  public ResponseEntity<Map<String, Object>> handleTooManyRunStreams(
+      TooManyRunStreamsException ex) {
+    return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+        .header("Retry-After", "5")
+        .body(
+            Map.of(
+                STATUS_KEY,
+                "too_many_run_streams",
+                MESSAGE_KEY,
+                ex.getMessage(),
+                "limit",
+                ex.limit()));
   }
 
   /**

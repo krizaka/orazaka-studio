@@ -1,16 +1,23 @@
 package com.krizaka.orazaka.studioservice.infrastructure.adapter.rest;
 
 import com.krizaka.orazaka.studioservice.application.service.IdempotentRunStartService;
+import com.krizaka.orazaka.studioservice.application.service.RunEventService;
 import com.krizaka.orazaka.studioservice.application.service.StudioRunService;
 import com.krizaka.orazaka.studioservice.domain.exception.RunNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.model.ContentDecision;
+import com.krizaka.orazaka.studioservice.domain.model.RunDetail;
 import com.krizaka.orazaka.studioservice.infrastructure.adapter.rest.dto.RunRequest;
 import com.krizaka.orazaka.studioservice.infrastructure.adapter.rest.dto.RunResponse;
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -22,6 +29,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
  * The runs sub-resource: executing an installation (ADR-034 §10).
@@ -44,12 +52,18 @@ class StudioRunController {
    */
   static final String IDEMPOTENT_REPLAYED = "Idempotent-Replayed";
 
+  /** One virtual thread per open stream: a stream mostly waits. */
+  private static final ExecutorService STREAMS = Executors.newVirtualThreadPerTaskExecutor();
+
   private final StudioRunService runService;
   private final IdempotentRunStartService starter;
+  private final RunEventService events;
 
-  StudioRunController(StudioRunService runService, IdempotentRunStartService starter) {
+  StudioRunController(
+      StudioRunService runService, IdempotentRunStartService starter, RunEventService events) {
     this.runService = Objects.requireNonNull(runService, "StudioRunService cannot be null");
     this.starter = Objects.requireNonNull(starter, "IdempotentRunStartService cannot be null");
+    this.events = Objects.requireNonNull(events, "RunEventService cannot be null");
   }
 
   private ResponseEntity<RunResponse> accepted(IdempotentRunStartService.Started started) {
@@ -172,6 +186,78 @@ class StudioRunController {
         .find(runId, actor.getSubject())
         .map(RunResponse::from)
         .orElseThrow(() -> new RunNotFoundException(runId));
+  }
+
+  /**
+   * Follows a run as Server-Sent Events instead of polling it (orazaka#189, ADR-083).
+   *
+   * <p>Each event is a full snapshot of the run, as {@code GET /runs/{runId}} would answer: {@code
+   * event: run} when it changes (and once at the start), {@code event: done} when it is over, after
+   * which the stream ends. A reconnecting client receives the current state. A comment line every
+   * 15 seconds keeps an idle connection open.
+   *
+   * @param runId the run
+   * @param actor the authenticated caller
+   * @return the stream; {@code 404} when the run is not the caller's, {@code 429} when the caller
+   *     already holds as many streams as allowed
+   */
+  @GetMapping(value = "/runs/{runId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+  SseEmitter events(@PathVariable UUID runId, @AuthenticationPrincipal Jwt actor) {
+    RunEventService.Subscription subscription = events.subscribe(runId, actor.getSubject());
+    SseEmitter emitter = new SseEmitter(0L);
+    AtomicBoolean open = new AtomicBoolean(true);
+    Runnable gone =
+        () -> {
+          open.set(false);
+          subscription.close();
+        };
+    emitter.onCompletion(gone);
+    emitter.onTimeout(gone);
+    emitter.onError(e -> gone.run());
+    STREAMS.execute(
+        () -> {
+          try {
+            subscription.pump(new EmitterSink(emitter, open));
+            emitter.complete();
+          } catch (IOException e) {
+            gone.run();
+          } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            gone.run();
+          } catch (RuntimeException e) {
+            emitter.completeWithError(e);
+          } finally {
+            subscription.close();
+          }
+        });
+    return emitter;
+  }
+
+  /** Writes the service's events as SSE frames. */
+  private record EmitterSink(SseEmitter emitter, AtomicBoolean alive)
+      implements RunEventService.Sink {
+
+    @Override
+    public void snapshot(long id, RunDetail run) throws IOException {
+      emitter.send(
+          SseEmitter.event().id(String.valueOf(id)).name("run").data(RunResponse.from(run)));
+    }
+
+    @Override
+    public void done(long id, RunDetail run) throws IOException {
+      emitter.send(
+          SseEmitter.event().id(String.valueOf(id)).name("done").data(RunResponse.from(run)));
+    }
+
+    @Override
+    public void heartbeat() throws IOException {
+      emitter.send(SseEmitter.event().comment("keep-alive"));
+    }
+
+    @Override
+    public boolean open() {
+      return alive.get();
+    }
   }
 
   /**

@@ -234,7 +234,7 @@ class StudioRunController {
   }
 
   /** Writes the service's events as SSE frames. */
-  private record EmitterSink(SseEmitter emitter, AtomicBoolean open)
+  private record EmitterSink(SseEmitter emitter, AtomicBoolean alive)
       implements RunEventService.Sink {
 
     @Override
@@ -256,7 +256,7 @@ class StudioRunController {
 
     @Override
     public boolean open() {
-      return open.get();
+      return alive.get();
     }
   }
 

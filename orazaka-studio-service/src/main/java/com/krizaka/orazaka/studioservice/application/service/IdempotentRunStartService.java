@@ -112,32 +112,34 @@ public class IdempotentRunStartService {
   }
 
   private void canonical(Object value, StringBuilder out) {
-    if (value instanceof Map<?, ?> map) {
-      List<String> keys = new ArrayList<>();
-      map.keySet().forEach(k -> keys.add(String.valueOf(k)));
-      keys.sort(null);
-      out.append('{');
-      for (int i = 0; i < keys.size(); i++) {
-        if (i > 0) {
-          out.append(',');
+    switch (value) {
+      case Map<?, ?> map -> {
+        List<String> keys = new ArrayList<>();
+        map.keySet().forEach(k -> keys.add(String.valueOf(k)));
+        keys.sort(null);
+        out.append('{');
+        for (int i = 0; i < keys.size(); i++) {
+          if (i > 0) {
+            out.append(',');
+          }
+          out.append(json.writeValueAsString(keys.get(i))).append(':');
+          canonical(map.get(keys.get(i)), out);
         }
-        out.append(json.writeValueAsString(keys.get(i))).append(':');
-        canonical(map.get(keys.get(i)), out);
+        out.append('}');
       }
-      out.append('}');
-    } else if (value instanceof Collection<?> items) {
-      out.append('[');
-      boolean first = true;
-      for (Object item : items) {
-        if (!first) {
-          out.append(',');
+      case Collection<?> items -> {
+        out.append('[');
+        boolean first = true;
+        for (Object item : items) {
+          if (!first) {
+            out.append(',');
+          }
+          first = false;
+          canonical(item, out);
         }
-        first = false;
-        canonical(item, out);
+        out.append(']');
       }
-      out.append(']');
-    } else {
-      out.append(json.writeValueAsString(value));
+      case null, default -> out.append(json.writeValueAsString(value));
     }
   }
 }

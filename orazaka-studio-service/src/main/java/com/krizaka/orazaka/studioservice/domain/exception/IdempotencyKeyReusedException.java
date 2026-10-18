@@ -1,5 +1,7 @@
 package com.krizaka.orazaka.studioservice.domain.exception;
 
+import java.io.Serial;
+
 /**
  * An {@code Idempotency-Key} that already started a run is presented with a different request.
  *
@@ -8,7 +10,7 @@ package com.krizaka.orazaka.studioservice.domain.exception;
  */
 public class IdempotencyKeyReusedException extends RuntimeException {
 
-  private static final long serialVersionUID = 1L;
+  @Serial private static final long serialVersionUID = 1L;
 
   /** Creates the refusal. */
   public IdempotencyKeyReusedException() {

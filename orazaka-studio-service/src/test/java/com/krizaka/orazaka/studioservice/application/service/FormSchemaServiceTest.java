@@ -67,6 +67,26 @@ class FormSchemaServiceTest {
   }
 
   @Test
+  @DisplayName("A category written in capitals still reaches the catalogue's lowercase one")
+  void categoryCaseDoesNotMatter() {
+    String shouting = SCHEMA.replace("\"category\":\"image\"", "\"category\":\"IMAGE\"");
+
+    JsonNode model =
+        json.readTree(service(catalogue(SD35, FLUX)).forForm(shouting))
+            .path("properties")
+            .path("model");
+
+    assertThat(model.path("oneOf")).hasSize(2);
+    assertThat(model.path("default").asString()).isEqualTo("stable-diffusion-3.5-large");
+    assertThatThrownBy(
+            () ->
+                service(catalogue(SD35, FLUX))
+                    .requireClosedSets(shouting, Map.of("model", "not-a-model")))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("is not a image model");
+  }
+
+  @Test
   @DisplayName("A model field arrives as a labelled choice list with the facts a picker shows")
   void modelFieldCarriesItsChoices() {
     JsonNode model =

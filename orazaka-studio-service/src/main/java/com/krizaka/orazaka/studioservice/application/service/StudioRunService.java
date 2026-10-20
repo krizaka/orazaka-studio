@@ -473,7 +473,7 @@ public class StudioRunService {
     // A value outside a field's closed set (a model id that does not exist, an aspect never
     // offered) is refused here, before a credit is held, naming the choices.
     formSchema.requireClosedSets(blueprint.inputSchema(), supplied);
-    return Map.copyOf(supplied);
+    return Map.copyOf(formSchema.withResolvedModels(blueprint.inputSchema(), supplied));
   }
 
   private List<RunStepView> stepsOf(UUID runId) {

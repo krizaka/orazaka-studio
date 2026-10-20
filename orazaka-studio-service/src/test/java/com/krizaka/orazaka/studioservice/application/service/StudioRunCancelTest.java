@@ -39,7 +39,7 @@ class StudioRunCancelTest {
             mock(StudioCatalogService.class),
             mock(StudioAccessService.class),
             mock(ContentPolicyService.class),
-            mock(FormSchemaService.class));
+            passthroughFormSchema());
   }
 
   @Test
@@ -59,5 +59,18 @@ class StudioRunCancelTest {
     runs.publishStop(UUID.randomUUID(), List.of());
 
     verify(saga, never()).stop(any(), any());
+  }
+
+  /**
+   * A form-schema service that checks nothing and resolves no model: the inputs go through as they
+   * came.
+   */
+  private static FormSchemaService passthroughFormSchema() {
+    FormSchemaService service = mock(FormSchemaService.class);
+    org.mockito.Mockito.when(
+            service.withResolvedModels(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+        .thenAnswer(invocation -> invocation.getArgument(1));
+    return service;
   }
 }

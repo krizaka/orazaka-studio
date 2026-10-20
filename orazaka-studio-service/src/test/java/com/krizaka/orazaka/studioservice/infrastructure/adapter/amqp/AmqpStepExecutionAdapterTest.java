@@ -247,12 +247,24 @@ class AmqpStepExecutionAdapterTest {
             Map.of("jobId", "job-77"));
   }
 
-  // ── A model a provider hosts is run by its own queue (a cheap CPU worker), not the GPU worker's ──────────
+  // ── A model a provider hosts is run by its own queue (a cheap CPU worker), not the GPU worker's
+  // ──────────
 
   private StepDispatch dispatchWithModel(String featureKey, String model) {
     return new StepDispatch(
-        RUN, "render", 0, featureKey, null, Map.of("prompt", "a cat", "model", model), "actor-1", "corr-1",
-        Map.of(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
+        RUN,
+        "render",
+        0,
+        featureKey,
+        null,
+        Map.of("prompt", "a cat", "model", model),
+        "actor-1",
+        "corr-1",
+        Map.of(),
+        Optional.empty(),
+        Optional.empty(),
+        Optional.empty(),
+        Optional.empty(),
         com.krizaka.orazaka.jobs.domain.model.DataClass.SENSITIVE);
   }
 
@@ -260,7 +272,8 @@ class AmqpStepExecutionAdapterTest {
     ModelOptionsClient models =
         new ModelOptionsClient() {
           @Override
-          public Optional<List<com.krizaka.orazaka.studioservice.domain.model.ModelChoice>> options(String category) {
+          public Optional<List<com.krizaka.orazaka.studioservice.domain.model.ModelChoice>> options(
+              String category) {
             return Optional.empty();
           }
 
@@ -273,21 +286,25 @@ class AmqpStepExecutionAdapterTest {
   }
 
   @Test
-  @DisplayName("A hosted video model is published on the hosted queue's key, the capability's own key stays for the others")
+  @DisplayName(
+      "A hosted video model is published on the hosted queue's key, the capability's own key stays for the others")
   void hostedModelIsPublishedOnItsOwnQueue() {
     route("orazaka.core.media.video", "job.video.generate");
-    AmqpStepExecutionAdapter routed = withQueues(Map.of("wan2-2-t2v-a14b", "job.hostedvideo.generate"));
+    AmqpStepExecutionAdapter routed =
+        withQueues(Map.of("wan2-2-t2v-a14b", "job.hostedvideo.generate"));
 
     routed.submit(dispatchWithModel("orazaka.core.media.video", "wan2-2-t2v-a14b"));
 
-    assertThat(capturedCommand("job.hostedvideo.generate")).containsEntry("featureKey", "orazaka.core.media.video");
+    assertThat(capturedCommand("job.hostedvideo.generate"))
+        .containsEntry("featureKey", "orazaka.core.media.video");
   }
 
   @Test
   @DisplayName("A self-hosted model, or a step with no model, keeps the capability's key")
   void otherModelsKeepTheCapabilityKey() {
     route("orazaka.core.media.video", "job.video.generate");
-    AmqpStepExecutionAdapter routed = withQueues(Map.of("wan2-2-t2v-a14b", "job.hostedvideo.generate"));
+    AmqpStepExecutionAdapter routed =
+        withQueues(Map.of("wan2-2-t2v-a14b", "job.hostedvideo.generate"));
 
     routed.submit(dispatchWithModel("orazaka.core.media.video", "wan2.2-t2v-a14b"));
 
@@ -295,7 +312,8 @@ class AmqpStepExecutionAdapterTest {
   }
 
   @Test
-  @DisplayName("The override only replaces the key of the capability that waits on a worker: a model of a Java-run capability never moves")
+  @DisplayName(
+      "The override only replaces the key of the capability that waits on a worker: a model of a Java-run capability never moves")
   void javaRunCapabilitiesAreNeverRerouted() {
     route("orazaka.core.media.image", "job.media.generate");
     AmqpStepExecutionAdapter routed = withQueues(Map.of("sd35", "job.hostedvideo.generate"));

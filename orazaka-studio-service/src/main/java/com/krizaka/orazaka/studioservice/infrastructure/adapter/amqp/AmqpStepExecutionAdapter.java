@@ -184,9 +184,10 @@ class AmqpStepExecutionAdapter implements StepExecutionClient {
   }
 
   /**
-   * The key a step is published with: its capability's, unless the model it names is run by another queue — a model a
-   * provider hosts is routed by a cheap CPU worker on its own queue, a self-hosted one by the GPU worker. Only a
-   * capability that waits on an external worker is ever moved (the job plane answers for the others).
+   * The key a step is published with: its capability's, unless the model it names is run by another
+   * queue — a model a provider hosts is routed by a cheap CPU worker on its own queue, a
+   * self-hosted one by the GPU worker. Only a capability that waits on an external worker is ever
+   * moved (the job plane answers for the others).
    */
   private String queueFor(CapabilityRoute route, Map<String, Object> inputs) {
     Object model = inputs == null ? null : inputs.get("model");
@@ -199,7 +200,10 @@ class AmqpStepExecutionAdapter implements StepExecutionClient {
         .orElse(route.routingKey());
   }
 
-  /** The same capability family: {@code job.video.generate} may become {@code job.hostedvideo.generate}, never a text key. */
+  /**
+   * The same capability family: {@code job.video.generate} may become {@code
+   * job.hostedvideo.generate}, never a text key.
+   */
   private static boolean sameFamilyAs(String own, String candidate) {
     String ownFamily = own.split("\\.")[1];
     String family = candidate.split("\\.")[1];

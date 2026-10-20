@@ -391,6 +391,17 @@ public class RunSagaService {
 
     Map<String, String> brandContext = effectiveConfig(run, blueprint);
     List<Object> items = expand(step, scope);
+    if (step.forEach() != null && items.isEmpty()) {
+      // A fan-out over nothing has nothing to wait for. Without a row for the step its dependants
+      // would wait for a
+      // state that never comes and the run would hold its slot for ever (orazaka#266): it is
+      // skipped, like a step
+      // whose condition is false, and the steps that depended on it go on.
+      logger.info("Step {} fans out over an empty list — skipping it", step.id());
+      recordSkipped(run.id(), step.id());
+      advanceLater(run.id());
+      return;
+    }
     for (int ordinal = 0; ordinal < items.size(); ordinal++) {
       RunScope itemScope = scope.withItem(items.get(ordinal));
       Map<String, Object> resolved = new LinkedHashMap<>();

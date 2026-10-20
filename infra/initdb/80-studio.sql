@@ -593,5 +593,6 @@ INSERT INTO studio_runtime_config (config_key, config_value, value_type, descrip
  ('webhook.backoff-cap-seconds',   '3600', 'int', 'Longest wait between two attempts.'),
  ('webhook.timeout-seconds',       '10',   'int', 'How long a receiver has to answer.'),
  ('webhook.batch-size',            '20',   'int', 'Deliveries taken per sweep and instance.'),
+ ('webhook.max-endpoints-per-actor','5',    'int', 'Webhook endpoints one actor may hold.'),
  ('webhook.rotation-grace-hours',  '24',   'int', 'How long the previous secret keeps signing next to the new one.')
 ON CONFLICT (config_key) DO NOTHING;

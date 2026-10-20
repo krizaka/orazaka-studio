@@ -14,6 +14,8 @@ import com.krizaka.orazaka.studioservice.domain.exception.StudioIncludedExceptio
 import com.krizaka.orazaka.studioservice.domain.exception.StudioNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.exception.StudioNotInstalledException;
 import com.krizaka.orazaka.studioservice.domain.exception.TooManyRunStreamsException;
+import com.krizaka.orazaka.studioservice.domain.exception.TooManyWebhookEndpointsException;
+import com.krizaka.orazaka.studioservice.domain.exception.WebhookEndpointNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.model.ContentDecision;
 import java.util.HashMap;
 import java.util.List;
@@ -112,6 +114,39 @@ public class RestErrorResolver {
     logger.info("Rejected request: {}", ex.getMessage());
     return ResponseEntity.badRequest()
         .body(Map.of(STATUS_KEY, "invalid_request", MESSAGE_KEY, String.valueOf(ex.getMessage())));
+  }
+
+  /**
+   * Maps a webhook endpoint the caller does not own to {@code 404}.
+   *
+   * @param ex the refusal
+   * @return {@code 404} with the stable code {@code webhook_not_found}
+   */
+  @ExceptionHandler(WebhookEndpointNotFoundException.class)
+  public ResponseEntity<Map<String, Object>> handleWebhookNotFound(
+      WebhookEndpointNotFoundException ex) {
+    return ResponseEntity.status(HttpStatus.NOT_FOUND)
+        .body(Map.of(STATUS_KEY, "webhook_not_found", MESSAGE_KEY, ex.getMessage()));
+  }
+
+  /**
+   * Maps too many webhook endpoints to {@code 409}.
+   *
+   * @param ex the refusal
+   * @return {@code 409} with the stable code {@code too_many_webhooks}
+   */
+  @ExceptionHandler(TooManyWebhookEndpointsException.class)
+  public ResponseEntity<Map<String, Object>> handleTooManyWebhooks(
+      TooManyWebhookEndpointsException ex) {
+    return ResponseEntity.status(HttpStatus.CONFLICT)
+        .body(
+            Map.of(
+                STATUS_KEY,
+                "too_many_webhooks",
+                MESSAGE_KEY,
+                ex.getMessage(),
+                "limit",
+                ex.limit()));
   }
 
   /**

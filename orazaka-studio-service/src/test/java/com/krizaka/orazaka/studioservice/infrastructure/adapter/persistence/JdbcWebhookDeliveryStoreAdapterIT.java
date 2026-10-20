@@ -213,4 +213,40 @@ class JdbcWebhookDeliveryStoreAdapterIT {
         "UPDATE studio_webhook_endpoint SET previous_secret_until = now() - interval '1 minute'");
     assertThat(store.claimDue(10, Duration.ZERO).get(0).previousSecret()).isNull();
   }
+
+  @Test
+  @DisplayName("The endpoint repository is scoped to its actor: create, list, rotate, log, delete")
+  void endpointRepositoryIsScopedToTheActor() {
+    var repository = new JdbcWebhookEndpointRepositoryAdapter(jdbc);
+    var mine =
+        repository.create(
+            "a1", "https://hooks.example.com/mine", List.of("run.completed"), "whsec_one");
+    repository.create("a2", "https://hooks.example.com/theirs", List.of("run.failed"), "whsec_two");
+
+    assertThat(repository.count("a1")).isEqualTo(1);
+    assertThat(repository.list("a1"))
+        .extracting(e -> e.url())
+        .containsExactly("https://hooks.example.com/mine");
+    assertThat(repository.find("a2", mine.id())).as("another actor's id").isEmpty();
+    assertThat(repository.rotate("a2", mine.id(), "whsec_x", Duration.ofHours(1))).isFalse();
+    assertThat(repository.rotate("a1", mine.id(), "whsec_three", Duration.ofHours(1))).isTrue();
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT previous_secret || '>' || secret FROM studio_webhook_endpoint WHERE id = ?",
+                String.class,
+                mine.id()))
+        .isEqualTo("whsec_one>whsec_three");
+
+    finishedRun("a1", "SUCCEEDED");
+    jdbc.update("UPDATE studio_webhook_endpoint SET created_at = now() - interval '1 hour'");
+    store.enqueueFinishedRuns();
+    assertThat(repository.deliveries("a1", mine.id(), 10)).hasSize(1);
+    assertThat(repository.deliveries("a2", mine.id(), 10)).isEmpty();
+
+    assertThat(repository.delete("a2", mine.id())).isFalse();
+    assertThat(repository.delete("a1", mine.id())).isTrue();
+    assertThat(jdbc.queryForObject("SELECT count(*) FROM studio_webhook_delivery", Integer.class))
+        .as("the log goes with it")
+        .isZero();
+  }
 }

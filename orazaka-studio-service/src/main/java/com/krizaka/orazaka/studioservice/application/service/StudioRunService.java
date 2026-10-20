@@ -473,7 +473,11 @@ public class StudioRunService {
     // A value outside a field's closed set (a model id that does not exist, an aspect never
     // offered) is refused here, before a credit is held, naming the choices.
     formSchema.requireClosedSets(blueprint.inputSchema(), supplied);
-    return Map.copyOf(formSchema.withResolvedModels(blueprint.inputSchema(), supplied));
+    Map<String, Object> resolved = formSchema.withResolvedModels(blueprint.inputSchema(), supplied);
+    // The model that will run (chosen or resolved) must be able to make the aspect asked for:
+    // refused here, before a credit is held.
+    formSchema.requireAspectsFit(blueprint.inputSchema(), resolved);
+    return Map.copyOf(resolved);
   }
 
   private List<RunStepView> stepsOf(UUID runId) {
@@ -574,7 +578,12 @@ public class StudioRunService {
       Object value = values.get(output.key());
       if (value != null) {
         artefacts.add(
-            new RunArtefact(output.key(), output.label(), output.type(), String.valueOf(value)));
+            new RunArtefact(
+                output.key(),
+                output.label(),
+                output.type(),
+                String.valueOf(value),
+                output.labels()));
       }
     }
     // Anything the run produced that the blueprint no longer declares still belongs to the actor.

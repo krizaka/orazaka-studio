@@ -15,6 +15,7 @@ import com.krizaka.orazaka.jobs.domain.port.CapabilityRoutingClient;
 import com.krizaka.orazaka.studio.domain.model.RunStatus;
 import com.krizaka.orazaka.studio.domain.model.RunStepStatus;
 import com.krizaka.orazaka.studio.domain.model.StepDispatch;
+import com.krizaka.orazaka.studioservice.domain.exception.TooManyConcurrentRunsException;
 import com.krizaka.orazaka.studioservice.domain.model.InstalledStudio;
 import com.krizaka.orazaka.studioservice.domain.model.RunArtefact;
 import com.krizaka.orazaka.studioservice.domain.model.RunDetail;
@@ -643,7 +644,12 @@ class StudioRunLifecycleIT {
     runService.start(installation, ACTOR, inputs);
 
     // run.max-concurrent-per-actor is seeded at 2.
-    assertThrows(IllegalStateException.class, () -> runService.start(installation, ACTOR, inputs));
+    var refused =
+        assertThrows(
+            TooManyConcurrentRunsException.class,
+            () -> runService.start(installation, ACTOR, inputs));
+    assertEquals(15, refused.retryAfterSeconds());
+    assertEquals(2, refused.limit());
   }
 
   @Test

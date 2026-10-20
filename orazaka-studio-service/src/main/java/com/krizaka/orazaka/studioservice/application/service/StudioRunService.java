@@ -15,6 +15,7 @@ import com.krizaka.orazaka.studioservice.domain.exception.InstallationNotFoundEx
 import com.krizaka.orazaka.studioservice.domain.exception.RunNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.exception.StudioNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.exception.StudioNotInstalledException;
+import com.krizaka.orazaka.studioservice.domain.exception.TooManyConcurrentRunsException;
 import com.krizaka.orazaka.studioservice.domain.model.ContentDecision;
 import com.krizaka.orazaka.studioservice.domain.model.InstalledStudio;
 import com.krizaka.orazaka.studioservice.domain.model.RunArtefact;
@@ -381,7 +382,8 @@ public class StudioRunService {
     // way.
     publishStop(runId, inFlightJobIds(runId));
     jdbcTemplate.update(
-        "UPDATE studio_run SET status = ?, finished_at = now() WHERE id = ? AND finished_at IS NULL",
+        "UPDATE studio_run SET status = ?, finished_at = now() WHERE id = ? AND finished_at IS"
+            + " NULL",
         RunStatus.CANCELLED.name(),
         runId);
     jdbcTemplate.update(
@@ -418,9 +420,13 @@ public class StudioRunService {
             Integer.class,
             actorId);
     if (active != null && active >= cap) {
-      throw new IllegalStateException(
-          "too many concurrent runs: " + active + " of " + cap + " already running");
+      throw new TooManyConcurrentRunsException(active, cap, concurrencyRetryAfter());
     }
+  }
+
+  /** When to try again: the {@code run.concurrency-retry-seconds} row (default 15), at least 1. */
+  private int concurrencyRetryAfter() {
+    return Math.max(1, runtimeConfigService.intValue("run.concurrency-retry-seconds", 15));
   }
 
   /**
@@ -515,11 +521,11 @@ public class StudioRunService {
   private long[] medianWallTime(String studioKey, String stepId) {
     return jdbcTemplate.query(
         "SELECT COALESCE(percentile_cont(0.5) WITHIN GROUP (ORDER BY ms), 0), COUNT(*) FROM ("
-            + " SELECT EXTRACT(EPOCH FROM (s.finished_at - s.started_at)) * 1000 AS ms"
-            + " FROM studio_run_step s JOIN studio_run r ON r.id = s.run_id"
-            + " WHERE r.studio_key = ? AND r.data_class = 'STANDARD' AND s.step_id = ? AND s.status = ?"
-            + " AND s.started_at IS NOT NULL AND s.finished_at IS NOT NULL"
-            + " ORDER BY s.finished_at DESC LIMIT 20) recent",
+            + " SELECT EXTRACT(EPOCH FROM (s.finished_at - s.started_at)) * 1000 AS ms FROM"
+            + " studio_run_step s JOIN studio_run r ON r.id = s.run_id WHERE r.studio_key = ? AND"
+            + " r.data_class = 'STANDARD' AND s.step_id = ? AND s.status = ? AND s.started_at IS"
+            + " NOT NULL AND s.finished_at IS NOT NULL ORDER BY s.finished_at DESC LIMIT 20)"
+            + " recent",
         rs ->
             rs.next() ? new long[] {Math.round(rs.getDouble(1)), rs.getLong(2)} : new long[] {0, 0},
         studioKey,

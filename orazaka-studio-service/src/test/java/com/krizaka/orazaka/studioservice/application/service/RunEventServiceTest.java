@@ -227,4 +227,125 @@ class RunEventServiceTest {
     two.close();
     three.close();
   }
+
+  // ── the per-key stream: every run of the actor, one connection (orazaka#189) ─────────────────
+
+  private RunDetail runOf(UUID id, RunStatus status) {
+    return new RunDetail(
+        id, null, "compliance-check", "1.0.0", status, null, null, null, Instant.EPOCH, null, null);
+  }
+
+  /** The actor's history reads as these lists in turn, the last one for ever. */
+  private void historyReads(List<RunDetail>... states) {
+    java.util.Iterator<List<RunDetail>> next = List.of(states).iterator();
+    List<List<RunDetail>> current = new ArrayList<>();
+    current.add(List.of());
+    when(runs.history(ACTOR, 50))
+        .thenAnswer(
+            call -> {
+              if (next.hasNext()) {
+                current.set(0, next.next());
+              }
+              return current.get(0);
+            });
+  }
+
+  private static final class IdSink implements RunEventService.Sink {
+    final List<String> events = new ArrayList<>();
+    boolean open = true;
+    int closeAfter = Integer.MAX_VALUE;
+
+    private void note(String event) {
+      events.add(event);
+      if (events.size() >= closeAfter) {
+        open = false;
+      }
+    }
+
+    @Override
+    public void snapshot(long id, RunDetail run) {
+      note("run#" + id + ":" + run.id().toString().substring(0, 1) + ":" + run.status());
+    }
+
+    @Override
+    public void done(long id, RunDetail run) {
+      note("done#" + id + ":" + run.id().toString().substring(0, 1) + ":" + run.status());
+    }
+
+    @Override
+    public void heartbeat() {
+      note("heartbeat");
+    }
+
+    @Override
+    public boolean open() {
+      return open;
+    }
+  }
+
+  private static final UUID A = UUID.fromString("a0000000-0000-0000-0000-000000000001");
+  private static final UUID B = UUID.fromString("b0000000-0000-0000-0000-000000000002");
+  private static final UUID C = UUID.fromString("c0000000-0000-0000-0000-000000000003");
+
+  @Test
+  @DisplayName(
+      "the all-runs stream sends the runs in flight at once, then each change, finished ones as"
+          + " done")
+  @SuppressWarnings("unchecked")
+  void allRunsSendsInFlightThenChanges() throws Exception {
+    historyReads(
+        List.of(runOf(A, RunStatus.RUNNING), runOf(C, RunStatus.SUCCEEDED)),
+        List.of(runOf(A, RunStatus.RUNNING), runOf(C, RunStatus.SUCCEEDED)),
+        List.of(
+            runOf(B, RunStatus.RUNNING),
+            runOf(A, RunStatus.AWAITING_INPUT),
+            runOf(C, RunStatus.SUCCEEDED)),
+        List.of(
+            runOf(B, RunStatus.SUCCEEDED),
+            runOf(A, RunStatus.AWAITING_INPUT),
+            runOf(C, RunStatus.SUCCEEDED)));
+    IdSink sink = new IdSink();
+    sink.closeAfter = 4;
+
+    try (var subscription = events.subscribeAll(ACTOR)) {
+      subscription.pump(sink);
+    }
+
+    // C was over before the stream opened: not replayed. A is in flight: sent. Then A changes and B
+    // appears
+    // (oldest first within one read), then B ends.
+    assertThat(sink.events)
+        .containsExactly(
+            "run#1:a:RUNNING", "run#2:a:AWAITING_INPUT", "run#3:b:RUNNING", "done#4:b:SUCCEEDED");
+  }
+
+  @Test
+  @DisplayName("the all-runs stream sends a heartbeat when quiet, and ends at the time limit")
+  @SuppressWarnings("unchecked")
+  void allRunsHeartbeatAndTimeLimit() throws Exception {
+    when(config.intValue("run.events.max-seconds", 1800)).thenReturn(20);
+    historyReads(List.of());
+    IdSink sink = new IdSink();
+
+    try (var subscription = events.subscribeAll(ACTOR)) {
+      subscription.pump(sink);
+    }
+
+    assertThat(sink.events).isNotEmpty().allMatch("heartbeat"::equals);
+    assertThat(clock.now - 1_000_000L).isBetween(20_000L, 22_000L);
+  }
+
+  @Test
+  @DisplayName(
+      "the all-runs stream takes one of the actor's stream slots, like a single-run stream")
+  void allRunsHoldsASlot() {
+    when(config.intValue("run.max-streams-per-actor", 5)).thenReturn(1);
+
+    var all = events.subscribeAll(ACTOR);
+    assertThatThrownBy(() -> events.subscribeAll(ACTOR))
+        .isInstanceOf(TooManyRunStreamsException.class);
+    all.close();
+
+    assertThat(events.subscribeAll(ACTOR)).isNotNull();
+  }
 }

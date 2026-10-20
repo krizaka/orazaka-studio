@@ -204,12 +204,46 @@ class StudioRunController {
   @GetMapping(value = "/runs/{runId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
   SseEmitter events(@PathVariable UUID runId, @AuthenticationPrincipal Jwt actor) {
     RunEventService.Subscription subscription = events.subscribe(runId, actor.getSubject());
+    return stream(subscription, subscription::pump);
+  }
+
+  /**
+   * Follows every run of the caller on one connection (the per-key stream of orazaka#189): {@code
+   * event: run} whenever a run in flight changes, {@code event: done} when one ends, each carrying
+   * the run as {@code GET /runs/{runId}} would. Runs that were over before the stream opened are
+   * not replayed; read the history for them. It counts as one stream against the caller's limit,
+   * and a comment line every 15 seconds keeps an idle connection open.
+   *
+   * @param actor the authenticated caller
+   * @return the stream; {@code 429} when the caller already holds as many streams as allowed
+   */
+  @GetMapping(value = "/runs/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+  SseEmitter allEvents(@AuthenticationPrincipal Jwt actor) {
+    RunEventService.AllRunsSubscription subscription = events.subscribeAll(actor.getSubject());
+    return stream(subscription, subscription::pump);
+  }
+
+  /** A pump that writes to a sink. */
+  @FunctionalInterface
+  private interface Pump {
+    void run(RunEventService.Sink sink) throws IOException, InterruptedException;
+  }
+
+  private SseEmitter stream(AutoCloseable subscription, Pump pump) {
     SseEmitter emitter = new SseEmitter(0L);
     AtomicBoolean open = new AtomicBoolean(true);
+    Runnable close =
+        () -> {
+          try {
+            subscription.close();
+          } catch (Exception e) {
+            // closing a slot cannot fail in a way a client could act on
+          }
+        };
     Runnable gone =
         () -> {
           open.set(false);
-          subscription.close();
+          close.run();
         };
     emitter.onCompletion(gone);
     emitter.onTimeout(gone);
@@ -217,7 +251,7 @@ class StudioRunController {
     STREAMS.execute(
         () -> {
           try {
-            subscription.pump(new EmitterSink(emitter, open));
+            pump.run(new EmitterSink(emitter, open));
             emitter.complete();
           } catch (IOException e) {
             gone.run();
@@ -227,7 +261,7 @@ class StudioRunController {
           } catch (RuntimeException e) {
             emitter.completeWithError(e);
           } finally {
-            subscription.close();
+            close.run();
           }
         });
     return emitter;

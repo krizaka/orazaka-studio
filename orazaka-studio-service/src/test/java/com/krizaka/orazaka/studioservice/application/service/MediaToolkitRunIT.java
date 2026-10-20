@@ -167,6 +167,7 @@ class MediaToolkitRunIT {
   @BeforeEach
   void reset() {
     jdbcTemplate.update("DELETE FROM studio_run");
+    jdbcTemplate.update("DELETE FROM studio_installation");
     jdbcTemplate.update("DELETE FROM studio_outbox");
     executor.dispatched.clear();
     credits.aggregateSettlements.clear();

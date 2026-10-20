@@ -197,19 +197,71 @@ class StudioRunController {
    * 15 seconds keeps an idle connection open.
    *
    * @param runId the run
+   * @param lastEventId the {@code Last-Event-ID} an {@code EventSource} sends when it reconnects
    * @param actor the authenticated caller
-   * @return the stream; {@code 404} when the run is not the caller's, {@code 429} when the caller
-   *     already holds as many streams as allowed
+   * @return the stream; {@code 204} when the client has already seen the run's end; {@code 404}
+   *     when the run is not the caller's, {@code 429} when the caller already holds as many streams
+   *     as allowed
    */
   @GetMapping(value = "/runs/{runId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-  SseEmitter events(@PathVariable UUID runId, @AuthenticationPrincipal Jwt actor) {
-    RunEventService.Subscription subscription = events.subscribe(runId, actor.getSubject());
+  ResponseEntity<SseEmitter> events(
+      @PathVariable UUID runId,
+      @RequestHeader(value = "Last-Event-ID", required = false) String lastEventId,
+      @AuthenticationPrincipal Jwt actor) {
+    long seen = parseEventId(lastEventId);
+    if (events.alreadySeenTheEnd(runId, actor.getSubject(), seen)) {
+      // 204 tells an EventSource not to reconnect: it has seen the run's last event.
+      return ResponseEntity.noContent().build();
+    }
+    RunEventService.Subscription subscription = events.subscribe(runId, actor.getSubject(), seen);
+    return ResponseEntity.ok(stream(subscription, subscription::pump));
+  }
+
+  private static long parseEventId(String header) {
+    try {
+      return header == null ? -1 : Math.max(-1, Long.parseLong(header.strip()));
+    } catch (NumberFormatException malformed) {
+      return -1;
+    }
+  }
+
+  /**
+   * Follows every run of the caller on one connection (the per-key stream of orazaka#189): {@code
+   * event: run} whenever a run in flight changes, {@code event: done} when one ends, each carrying
+   * the run as {@code GET /runs/{runId}} would. Runs that were over before the stream opened are
+   * not replayed; read the history for them. It counts as one stream against the caller's limit,
+   * and a comment line every 15 seconds keeps an idle connection open.
+   *
+   * @param actor the authenticated caller
+   * @return the stream; {@code 429} when the caller already holds as many streams as allowed
+   */
+  @GetMapping(value = "/runs/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+  SseEmitter allEvents(@AuthenticationPrincipal Jwt actor) {
+    RunEventService.AllRunsSubscription subscription = events.subscribeAll(actor.getSubject());
+    return stream(subscription, subscription::pump);
+  }
+
+  /** A pump that writes to a sink. */
+  @FunctionalInterface
+  private interface Pump {
+    void run(RunEventService.Sink sink) throws IOException, InterruptedException;
+  }
+
+  private SseEmitter stream(AutoCloseable subscription, Pump pump) {
     SseEmitter emitter = new SseEmitter(0L);
     AtomicBoolean open = new AtomicBoolean(true);
+    Runnable close =
+        () -> {
+          try {
+            subscription.close();
+          } catch (Exception e) {
+            // closing a slot cannot fail in a way a client could act on
+          }
+        };
     Runnable gone =
         () -> {
           open.set(false);
-          subscription.close();
+          close.run();
         };
     emitter.onCompletion(gone);
     emitter.onTimeout(gone);
@@ -217,7 +269,7 @@ class StudioRunController {
     STREAMS.execute(
         () -> {
           try {
-            subscription.pump(new EmitterSink(emitter, open));
+            pump.run(new EmitterSink(emitter, open));
             emitter.complete();
           } catch (IOException e) {
             gone.run();
@@ -227,7 +279,7 @@ class StudioRunController {
           } catch (RuntimeException e) {
             emitter.completeWithError(e);
           } finally {
-            subscription.close();
+            close.run();
           }
         });
     return emitter;

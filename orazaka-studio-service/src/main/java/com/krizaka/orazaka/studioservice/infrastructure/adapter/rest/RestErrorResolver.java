@@ -13,6 +13,7 @@ import com.krizaka.orazaka.studioservice.domain.exception.RunNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.exception.StudioIncludedException;
 import com.krizaka.orazaka.studioservice.domain.exception.StudioNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.exception.StudioNotInstalledException;
+import com.krizaka.orazaka.studioservice.domain.exception.TooManyConcurrentRunsException;
 import com.krizaka.orazaka.studioservice.domain.exception.TooManyRunStreamsException;
 import com.krizaka.orazaka.studioservice.domain.model.ContentDecision;
 import java.util.HashMap;
@@ -83,6 +84,34 @@ public class RestErrorResolver {
     logger.info("Run not visible to caller: {}", ex.runId());
     return ResponseEntity.status(HttpStatus.NOT_FOUND)
         .body(Map.of(STATUS_KEY, "run_not_found", MESSAGE_KEY, ex.getMessage()));
+  }
+
+  /**
+   * Maps the per-actor concurrency cap to {@code 429} with {@code Retry-After} (ADR-083).
+   *
+   * <p>The answer a looping client can act on: it says how long to wait instead of a bare conflict.
+   *
+   * @param ex the refusal
+   * @return {@code 429} with the stable code {@code too_many_concurrent_runs}
+   */
+  @ExceptionHandler(TooManyConcurrentRunsException.class)
+  public ResponseEntity<Map<String, Object>> handleTooManyConcurrentRuns(
+      TooManyConcurrentRunsException ex) {
+    logger.info("Run refused by the concurrency cap: {}", ex.getMessage());
+    return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+        .header("Retry-After", Integer.toString(ex.retryAfterSeconds()))
+        .body(
+            Map.of(
+                STATUS_KEY,
+                "too_many_concurrent_runs",
+                MESSAGE_KEY,
+                String.valueOf(ex.getMessage()),
+                "limit",
+                ex.limit(),
+                "active",
+                ex.active(),
+                "retryAfterSeconds",
+                ex.retryAfterSeconds()));
   }
 
   /**

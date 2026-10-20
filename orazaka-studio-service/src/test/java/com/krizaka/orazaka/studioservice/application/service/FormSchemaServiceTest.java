@@ -292,4 +292,98 @@ class FormSchemaServiceTest {
     assertThat(service(catalogue(SD35)).withResolvedModels(noModel, Map.of("prompt", "x")))
         .isEqualTo(Map.of("prompt", "x"));
   }
+
+  // ── A model declares the aspects it can make (x-options.aspects): the server refuses the rest,
+  // fills the default ──
+
+  private static final String VIDEO_SCHEMA =
+      """
+      {"type":"object","properties":{
+        "prompt":{"type":"string"},
+        "aspect":{"type":"string","enum":["9:16","16:9","1:1"],"default":"9:16"},
+        "model":{"type":"string","x-options":{"source":"models","category":"video","aspectField":"aspect",
+                 "aspects":{"wan-hosted":["16:9"],"wan-gpu":["9:16","16:9","1:1"]}}}}}
+      """;
+
+  private static ModelChoice video(String id, String label, boolean available, boolean isDefault) {
+    return new ModelChoice(
+        id,
+        label,
+        "p",
+        available ? "cloud" : "local",
+        null,
+        null,
+        null,
+        null,
+        available,
+        null,
+        null,
+        isDefault);
+  }
+
+  private static ModelOptionsClient videoCatalogue(ModelChoice... choices) {
+    return category -> "video".equals(category) ? Optional.of(List.of(choices)) : Optional.empty();
+  }
+
+  @Test
+  @DisplayName(
+      "Run 6567e02a: the hosted Wan with the form's default 9:16 is refused before any credit is held, naming what it makes")
+  void unsupportedAspectIsRefusedBeforeAnyHold() {
+    FormSchemaService service =
+        service(
+            videoCatalogue(
+                video("wan-hosted", "Wan 2.2 hosted", true, true),
+                video("wan-gpu", "Wan GPU", false, false)));
+    Map<String, Object> inputs =
+        service.withResolvedModels(VIDEO_SCHEMA, Map.of("prompt", "x", "aspect", "9:16"));
+
+    assertThatThrownBy(() -> service.requireAspectsFit(VIDEO_SCHEMA, inputs))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("aspect: '9:16' is not supported by Wan 2.2 hosted")
+        .hasMessageContaining("16:9");
+    assertThatCode(
+            () ->
+                service.requireAspectsFit(
+                    VIDEO_SCHEMA, Map.of("model", "wan-hosted", "aspect", "16:9")))
+        .doesNotThrowAnyException();
+    assertThatCode(
+            () ->
+                service.requireAspectsFit(
+                    VIDEO_SCHEMA, Map.of("model", "wan-gpu", "aspect", "9:16")))
+        .doesNotThrowAnyException();
+  }
+
+  @Test
+  @DisplayName(
+      "No aspect given: the model's first supported one fills it (16:9 for the hosted Wan); one given is never replaced")
+  void defaultAspectIsTheModelsFirst() {
+    FormSchemaService service =
+        service(
+            videoCatalogue(
+                video("wan-hosted", "Wan 2.2 hosted", true, true),
+                video("wan-gpu", "Wan GPU", true, false)));
+
+    assertThat(service.withResolvedModels(VIDEO_SCHEMA, Map.of("prompt", "x")))
+        .containsEntry("model", "wan-hosted")
+        .containsEntry("aspect", "16:9");
+    assertThat(service.withResolvedModels(VIDEO_SCHEMA, Map.of("model", "wan-gpu")))
+        .containsEntry("aspect", "9:16");
+    assertThat(
+            service.withResolvedModels(VIDEO_SCHEMA, Map.of("model", "wan-gpu", "aspect", "1:1")))
+        .containsEntry("aspect", "1:1");
+  }
+
+  @Test
+  @DisplayName(
+      "A model that declares no aspects, or a schema with no aspect field, is never refused on aspect")
+  void modelsWithoutDeclarationAreNotJudged() {
+    FormSchemaService service = service(videoCatalogue(video("other", "Other", true, true)));
+
+    assertThatCode(
+            () ->
+                service.requireAspectsFit(VIDEO_SCHEMA, Map.of("model", "other", "aspect", "1:1")))
+        .doesNotThrowAnyException();
+    assertThatCode(() -> service.requireAspectsFit(SCHEMA, Map.of("model", "x", "aspect", "9:16")))
+        .doesNotThrowAnyException();
+  }
 }

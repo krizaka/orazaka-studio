@@ -1,5 +1,6 @@
 package com.krizaka.orazaka.studioservice.domain.model;
 
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -19,8 +20,11 @@ import java.util.Objects;
  * @param label the human label to show — the key itself when the blueprint no longer declares it
  * @param type the rendering hint: {@code VIDEO}, {@code IMAGE}, {@code TEXT}
  * @param value what the run actually produced
+ * @param labels the label in each language the pack wrote, by language (empty when none): the
+ *     client shows its page's language and falls back to {@code label}
  */
-public record RunArtefact(String key, String label, String type, String value) {
+public record RunArtefact(
+    String key, String label, String type, String value, Map<String, String> labels) {
 
   /** The fallback for an output no blueprint declaration matches. */
   private static final String UNTYPED = "TEXT";
@@ -36,5 +40,11 @@ public record RunArtefact(String key, String label, String type, String value) {
     label = label == null || label.isBlank() ? key : label;
     type = type == null || type.isBlank() ? UNTYPED : type;
     value = value == null ? "" : value;
+    labels = labels == null ? Map.of() : Map.copyOf(labels);
+  }
+
+  /** An artefact whose label has no translations. */
+  public RunArtefact(String key, String label, String type, String value) {
+    this(key, label, type, value, Map.of());
   }
 }

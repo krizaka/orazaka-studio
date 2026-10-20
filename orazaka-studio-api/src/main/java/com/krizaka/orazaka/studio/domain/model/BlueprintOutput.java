@@ -1,5 +1,6 @@
 package com.krizaka.orazaka.studio.domain.model;
 
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -20,7 +21,8 @@ import java.util.Objects;
  *     asked for an object returns prose often enough that "type: JSON" without a contract is a
  *     rendering hint the value does not keep
  */
-public record BlueprintOutput(String key, String label, String from, String type, String schema) {
+public record BlueprintOutput(
+    String key, String label, String from, String type, String schema, Map<String, String> labels) {
 
   /**
    * Compact canonical constructor; validates its own template grammar as the field owner (ERR-106).
@@ -38,6 +40,7 @@ public record BlueprintOutput(String key, String label, String from, String type
     Objects.requireNonNull(type, "output type must not be null");
     RunScope.assertValidGrammar(from);
     schema = schema == null || schema.isBlank() ? null : schema;
+    labels = labels == null ? Map.of() : Map.copyOf(labels);
     if (schema != null && !"JSON".equals(type)) {
       // A contract on a value nobody parses would be a declaration that is never checked.
       throw new IllegalArgumentException(
@@ -54,6 +57,19 @@ public record BlueprintOutput(String key, String label, String from, String type
    * @param type the rendering hint
    */
   public BlueprintOutput(String key, String label, String from, String type) {
-    this(key, label, from, type, null);
+    this(key, label, from, type, null, Map.of());
+  }
+
+  /**
+   * An output with a contract and no translations.
+   *
+   * @param key stable identifier
+   * @param label what the actor sees
+   * @param from where the value comes from
+   * @param type the rendering hint
+   * @param schema the contract of a JSON output, or null
+   */
+  public BlueprintOutput(String key, String label, String from, String type, String schema) {
+    this(key, label, from, type, schema, Map.of());
   }
 }

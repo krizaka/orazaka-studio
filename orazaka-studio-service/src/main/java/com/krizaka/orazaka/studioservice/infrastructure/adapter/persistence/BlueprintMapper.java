@@ -159,9 +159,22 @@ final class BlueprintMapper {
               text(output, "label"),
               text(output, "from"),
               textOr(output, "type", "TEXT"),
-              schemaOf(output)));
+              schemaOf(output),
+              labelsOf(output)));
     }
     return parsed;
+  }
+
+  /** The output's label in each language the pack wrote ({@code x-i18n.<lang>.label}). */
+  private static java.util.Map<String, String> labelsOf(JsonNode output) {
+    java.util.Map<String, String> labels = new java.util.LinkedHashMap<>();
+    for (java.util.Map.Entry<String, JsonNode> language : output.path("x-i18n").properties()) {
+      String label = language.getValue().path("label").asString("");
+      if (!label.isBlank()) {
+        labels.put(language.getKey(), label);
+      }
+    }
+    return labels;
   }
 
   /**

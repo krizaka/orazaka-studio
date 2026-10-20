@@ -145,7 +145,94 @@ public class FormSchemaService {
         resolved.put(field.getKey(), running.get().value());
       }
     }
-    return resolved == null ? inputs : Map.copyOf(resolved);
+    Map<String, Object> withModels = resolved == null ? inputs : Map.copyOf(resolved);
+    return withDefaultAspects(root, withModels);
+  }
+
+  /** Fills a blank aspect with the first one the chosen model can make (the hosted Wan: 16:9). */
+  private Map<String, Object> withDefaultAspects(JsonNode root, Map<String, Object> inputs) {
+    Map<String, Object> filled = null;
+    for (Map.Entry<String, JsonNode> field : root.path("properties").properties()) {
+      JsonNode options = field.getValue().path(OPTIONS);
+      String aspectField = options.path("aspectField").asString("");
+      Object model = inputs.get(field.getKey());
+      if (aspectField.isBlank() || model == null || String.valueOf(model).isBlank()) {
+        continue;
+      }
+      Object aspect = inputs.get(aspectField);
+      if (aspect != null && !String.valueOf(aspect).isBlank()) {
+        continue;
+      }
+      List<String> supported = aspectsOf(options, String.valueOf(model).strip());
+      if (!supported.isEmpty()) {
+        filled = filled == null ? new java.util.HashMap<>(inputs) : filled;
+        filled.put(aspectField, supported.getFirst());
+      }
+    }
+    return filled == null ? inputs : Map.copyOf(filled);
+  }
+
+  /**
+   * Refuses an aspect the chosen model cannot make ({@code x-options.aspects}: model id → aspects),
+   * before any credit is held. A model that declares nothing, or a schema with no such field, is
+   * not judged.
+   *
+   * @param inputSchema the blueprint's raw input schema
+   * @param inputs the inputs to run with (the model already resolved)
+   * @throws IllegalArgumentException naming the aspect, the model and what it makes
+   */
+  public void requireAspectsFit(String inputSchema, Map<String, Object> inputs) {
+    JsonNode root = parse(inputSchema);
+    if (root == null || inputs == null || !root.path("properties").isObject()) {
+      return;
+    }
+    for (Map.Entry<String, JsonNode> field : root.path("properties").properties()) {
+      JsonNode options = field.getValue().path(OPTIONS);
+      String aspectField = options.path("aspectField").asString("");
+      Object model = inputs.get(field.getKey());
+      Object aspect = aspectField.isBlank() ? null : inputs.get(aspectField);
+      if (model == null
+          || String.valueOf(model).isBlank()
+          || aspect == null
+          || String.valueOf(aspect).isBlank()) {
+        continue;
+      }
+      String id = String.valueOf(model).strip();
+      List<String> supported = aspectsOf(options, id);
+      if (!supported.isEmpty() && !supported.contains(String.valueOf(aspect).strip())) {
+        throw new IllegalArgumentException(
+            aspectField
+                + ": '"
+                + String.valueOf(aspect).strip()
+                + "' is not supported by "
+                + labelOf(options.path("source").asString(""), modelCategory(field.getValue()), id)
+                + " (it makes "
+                + String.join(", ", supported)
+                + "). Choose "
+                + (supported.size() == 1 ? "that one" : "one of them")
+                + " or another model.");
+      }
+    }
+  }
+
+  private static List<String> aspectsOf(JsonNode options, String modelId) {
+    List<String> supported = new ArrayList<>();
+    for (JsonNode aspect : options.path("aspects").path(modelId)) {
+      supported.add(aspect.asString());
+    }
+    return supported;
+  }
+
+  private String labelOf(String source, String category, String modelId) {
+    if (category == null) {
+      return modelId;
+    }
+    return modelOptions.options(category).stream()
+        .flatMap(List::stream)
+        .filter(choice -> choice.value().equalsIgnoreCase(modelId))
+        .map(ModelChoice::label)
+        .findFirst()
+        .orElse(modelId);
   }
 
   private void requireSomeModelRuns(String field, String category) {

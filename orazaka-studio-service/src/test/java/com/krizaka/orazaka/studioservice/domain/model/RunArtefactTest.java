@@ -42,4 +42,22 @@ class RunArtefactTest {
     assertThrows(NullPointerException.class, () -> new RunArtefact(null, "L", "TEXT", "v"));
     assertThrows(IllegalArgumentException.class, () -> new RunArtefact(" ", "L", "TEXT", "v"));
   }
+
+  @Test
+  void carriesItsLabelInEveryLanguageThePackWrote() {
+    RunArtefact artefact =
+        new RunArtefact(
+            "image",
+            "Votre image",
+            "IMAGE",
+            "asset-1",
+            java.util.Map.of("en", "Your image", "fr", "Votre image"));
+
+    assertEquals("Your image", artefact.labels().get("en"));
+    assertEquals("Votre image", artefact.labels().get("fr"));
+    assertEquals(
+        java.util.Map.of(),
+        new RunArtefact("k", "L", "TEXT", "v").labels(),
+        "none written: an empty map, never null");
+  }
 }

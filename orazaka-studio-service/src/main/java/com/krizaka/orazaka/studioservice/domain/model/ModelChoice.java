@@ -14,6 +14,8 @@ package com.krizaka.orazaka.studioservice.domain.model;
  * @param hint the catalogue's one-sentence description, may be null
  * @param available whether the engine answers right now
  * @param unavailableReason why not, null when available
+ * @param unavailableCode why not, as a code a client words in its language ({@code gpu_offline},
+ *     {@code worker_offline}, {@code provider_down}), null when available
  * @param isDefault whether this is the model used when the person chooses nothing
  */
 public record ModelChoice(
@@ -27,4 +29,5 @@ public record ModelChoice(
     String hint,
     boolean available,
     String unavailableReason,
+    String unavailableCode,
     boolean isDefault) {}

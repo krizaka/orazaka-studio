@@ -59,6 +59,7 @@ class StudioControllerTest {
                               null,
                               true,
                               null,
+                              null,
                               true))),
               new ObjectMapper()));
 

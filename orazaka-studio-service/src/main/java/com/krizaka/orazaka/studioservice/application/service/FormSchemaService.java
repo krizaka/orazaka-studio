@@ -4,6 +4,7 @@ import com.krizaka.orazaka.studioservice.domain.model.ModelChoice;
 import com.krizaka.orazaka.studioservice.domain.port.ModelOptionsClient;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -192,7 +193,12 @@ public class FormSchemaService {
     JsonNode options = spec.path(OPTIONS);
     if (SOURCE_MODELS.equals(options.path("source").asString())) {
       String category = options.path("category").asString();
-      return category == null || category.isBlank() ? null : category;
+      // The catalogue's categories are lowercase: « CHAT » asked for a category that has no model
+      // and drew an
+      // empty select on the form (dev, 2026-10-20).
+      return category == null || category.isBlank()
+          ? null
+          : category.strip().toLowerCase(Locale.ROOT);
     }
     return null;
   }

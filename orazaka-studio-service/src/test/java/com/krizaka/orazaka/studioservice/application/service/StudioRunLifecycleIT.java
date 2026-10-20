@@ -237,6 +237,41 @@ class StudioRunLifecycleIT {
         "studio-run-idempotency:1:xk-1");
   }
 
+  // ── orazaka#266: a forEach over an empty list must not strand the run ─────────────
+
+  @Test
+  @DisplayName("[#266] a forEach over an empty list is skipped at once, and its dependants proceed")
+  void emptyForEachDoesNotStrandTheRun() {
+    UUID installation = install();
+    RunDetail run =
+        runService.start(installation, ACTOR, Map.of("photos", List.of(), "trade", "plombier"));
+
+    // `describe` fans out over the photos: zero photos, zero items, so there is nothing to wait
+    // for. The step is
+    // recorded as SKIPPED (a step row that never existed made `caption` and `showcase` wait for
+    // ever).
+    assertEquals(
+        "SKIPPED",
+        jdbcTemplate.queryForObject(
+            "SELECT status FROM studio_run_step WHERE run_id = ? AND step_id = 'describe'",
+            String.class,
+            run.id()));
+    assertTrue(
+        !executor.dispatched.isEmpty(),
+        "the steps that depended on the empty fan-out are dispatched");
+
+    List.copyOf(executor.dispatched)
+        .forEach(
+            job ->
+                sagaService.applyOutcome(
+                    job, Map.of("content", "ok", "url", "/media/img-1.png"), null));
+
+    assertEquals(
+        RunStatus.SUCCEEDED,
+        runService.find(run.id(), ACTOR).orElseThrow().status(),
+        "the run ends instead of holding a run slot for ever");
+  }
+
   // ── §15: install → run → step outcomes → settle ───────────────────────────
 
   @Test
@@ -770,6 +805,30 @@ class StudioRunLifecycleIT {
     assertEquals(RunStatus.FAILED, swept.status());
     assertNotNull(swept.finishedAt());
     assertTrue(credits.released.contains("hold-1"), "a stranded run must not strand its credits");
+  }
+
+  @Test
+  @DisplayName(
+      "[#266] the sweeper closes a run that has been in flight too long, whatever its steps say,"
+          + " and frees its slot")
+  void sweeperClosesAnOverdueRunEvenWithHealthySteps() {
+    RunDetail run = startRun();
+    credits.released.clear();
+    // The steps are fresh (the per-step ceiling sees nothing wrong); only the run itself is old.
+    jdbcTemplate.update(
+        "UPDATE studio_run SET started_at = now() - INTERVAL '5 hours' WHERE id = ?", run.id());
+
+    new com.krizaka.orazaka.studioservice.infrastructure.adapter.schedule.RunSweeper(
+            jdbcTemplate,
+            context.getBean(RunSettlementService.class),
+            context.getBean(StudioRuntimeConfigService.class),
+            context.getBean(RunAuditService.class))
+        .sweep();
+
+    RunDetail swept = runService.find(run.id(), ACTOR).orElseThrow();
+    assertEquals(RunStatus.FAILED, swept.status());
+    assertNotNull(swept.finishedAt());
+    assertTrue(credits.released.contains("hold-1"), "its credits come back");
   }
 
   @Test

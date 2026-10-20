@@ -503,6 +503,7 @@ CREATE TRIGGER trg_content_policy_audit_immutable
 -- ON CONFLICT DO NOTHING rather than a reapplied file.
 INSERT INTO studio_runtime_config (config_key, config_value, value_type, description) VALUES
  ('run.max-concurrent-per-actor',    '2',     'int',     'Concurrent runs one actor may hold.'),
+ ('run.concurrency-retry-seconds',    '15',    'int',     'Retry-After (seconds) of the 429 answered when an actor holds its concurrent runs.'),
  ('run.max-streams-per-actor',      '5',     'int',     'Run event streams (SSE) one actor may hold open per instance.'),
  ('run.events.poll-millis',          '1500',  'int',     'How often an open run event stream reads the run.'),
  ('run.events.heartbeat-seconds',    '15',    'int',     'Silence after which a run event stream sends a keep-alive comment.'),

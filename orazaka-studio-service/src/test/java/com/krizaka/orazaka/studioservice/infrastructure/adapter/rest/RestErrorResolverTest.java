@@ -9,6 +9,7 @@ import com.krizaka.orazaka.studio.domain.exception.StudioNotEntitledException;
 import com.krizaka.orazaka.studioservice.domain.exception.StudioIncludedException;
 import com.krizaka.orazaka.studioservice.domain.exception.StudioNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.exception.StudioNotInstalledException;
+import com.krizaka.orazaka.studioservice.domain.exception.TooManyConcurrentRunsException;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
@@ -19,6 +20,30 @@ import org.springframework.http.ResponseEntity;
 class RestErrorResolverTest {
 
   private final RestErrorResolver resolver = new RestErrorResolver();
+
+  @Test
+  @DisplayName("The concurrency cap is 429 with Retry-After, not a bare 409 (ADR-083)")
+  void concurrencyCapIs429WithRetryAfter() {
+    ResponseEntity<Map<String, Object>> response =
+        resolver.handleTooManyConcurrentRuns(new TooManyConcurrentRunsException(2, 2, 17));
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+    assertThat(response.getHeaders().getFirst("Retry-After")).isEqualTo("17");
+    assertThat(response.getBody())
+        .containsEntry("status", "too_many_concurrent_runs")
+        .containsEntry("limit", 2)
+        .containsEntry("active", 2)
+        .containsEntry("retryAfterSeconds", 17);
+  }
+
+  @Test
+  @DisplayName(
+      "It is still an IllegalStateException, so a caller that catches the old refusal keeps"
+          + " working")
+  void concurrencyCapKeepsItsOldType() {
+    assertThat(new TooManyConcurrentRunsException(2, 2, 10))
+        .isInstanceOf(IllegalStateException.class);
+  }
 
   @Test
   @DisplayName("An unknown studio is 404")
@@ -95,7 +120,8 @@ class RestErrorResolverTest {
 
   @Test
   @DisplayName(
-      "[ADR-061] an unentitled TOOLKIT and an uninstalled VERTICAL refuse in one shape, with the pack")
+      "[ADR-061] an unentitled TOOLKIT and an uninstalled VERTICAL refuse in one shape, with the"
+          + " pack")
   void unentitledAndUninstalledShareOneShape() {
     ResponseEntity<Map<String, Object>> unentitled =
         resolver.handleNotEntitled(

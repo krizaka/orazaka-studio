@@ -41,6 +41,7 @@ class FormSchemaServiceTest {
           "Local default.",
           false,
           "FLUX.2 [klein] 4B is not running (its engine could not be reached)",
+          "gpu_offline",
           false);
   private static final ModelChoice SD35 =
       new ModelChoice(
@@ -53,6 +54,7 @@ class FormSchemaServiceTest {
           8,
           "Hosted.",
           true,
+          null,
           null,
           true);
 
@@ -107,6 +109,10 @@ class FormSchemaServiceTest {
     JsonNode second = model.path("oneOf").get(1);
     assertThat(second.path("x-meta").path("available").asBoolean()).isFalse();
     assertThat(second.path("x-meta").path("unavailableReason").asString()).contains("FLUX.2");
+    assertThat(second.path("x-meta").path("unavailableCode").asString())
+        .as("a client words the reason in its own language from the code")
+        .isEqualTo("gpu_offline");
+    assertThat(first.path("x-meta").has("unavailableCode")).isFalse();
     assertThat(second.path("x-meta").has("priceCents")).as("free: no price").isFalse();
   }
 
@@ -224,6 +230,29 @@ class FormSchemaServiceTest {
             () ->
                 service(category -> Optional.empty())
                     .requireClosedSets(SCHEMA, Map.of("model", "anything")))
+        .doesNotThrowAnyException();
+  }
+
+  @Test
+  @DisplayName(
+      "A blank model while nothing of the category can run is refused by name, not left to wait for a machine")
+  void blankModelWithNothingRunnableIsRefused() {
+    FormSchemaService service = service(catalogue(FLUX));
+
+    assertThatThrownBy(() -> service.requireClosedSets(SCHEMA, Map.of("prompt", "a cat")))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("model: no image model is available right now");
+    assertThatThrownBy(() -> service.requireClosedSets(SCHEMA, Map.of("model", " ")))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("no image model is available right now");
+  }
+
+  @Test
+  @DisplayName("A schema with no model field never asks the catalogue about a blank one")
+  void noModelFieldNoCheck() {
+    String schema = "{\"properties\":{\"prompt\":{\"type\":\"string\"}}}";
+
+    assertThatCode(() -> service(catalogue(FLUX)).requireClosedSets(schema, Map.of("prompt", "x")))
         .doesNotThrowAnyException();
   }
 }

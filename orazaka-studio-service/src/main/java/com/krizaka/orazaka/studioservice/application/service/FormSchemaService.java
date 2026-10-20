@@ -87,6 +87,10 @@ public class FormSchemaService {
     for (Map.Entry<String, JsonNode> field : root.path("properties").properties()) {
       Object supplied = inputs.get(field.getKey());
       if (supplied == null || String.valueOf(supplied).isBlank()) {
+        String category = modelCategory(field.getValue());
+        if (category != null) {
+          requireSomeModelRuns(field.getKey(), category);
+        }
         continue;
       }
       String value = String.valueOf(supplied).strip();
@@ -100,6 +104,24 @@ public class FormSchemaService {
       if (category != null) {
         requireModel(field.getKey(), value, category);
       }
+    }
+  }
+
+  /**
+   * A model left on « automatic » runs whichever one the platform picks; when none of the category
+   * can run (no worker up, no engine), the run is refused here by name instead of waiting for a
+   * machine.
+   */
+  private void requireSomeModelRuns(String field, String category) {
+    Optional<List<ModelChoice>> choices = modelOptions.options(category);
+    if (choices.isPresent()
+        && !choices.get().isEmpty()
+        && choices.get().stream().noneMatch(ModelChoice::available)) {
+      throw new IllegalArgumentException(
+          field
+              + ": no "
+              + category
+              + " model is available right now. Try again in a few minutes.");
     }
   }
 
@@ -158,6 +180,9 @@ public class FormSchemaService {
       meta.put("available", choice.available());
       if (choice.unavailableReason() != null) {
         meta.put("unavailableReason", choice.unavailableReason());
+      }
+      if (choice.unavailableCode() != null) {
+        meta.put("unavailableCode", choice.unavailableCode());
       }
       if (choice.isDefault()) {
         defaultValue = choice.value();

@@ -4,6 +4,7 @@ import com.krizaka.orazaka.studioservice.domain.model.ModelChoice;
 import com.krizaka.orazaka.studioservice.domain.port.ModelOptionsClient;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -86,6 +87,10 @@ public class FormSchemaService {
     for (Map.Entry<String, JsonNode> field : root.path("properties").properties()) {
       Object supplied = inputs.get(field.getKey());
       if (supplied == null || String.valueOf(supplied).isBlank()) {
+        String category = modelCategory(field.getValue());
+        if (category != null) {
+          requireSomeModelRuns(field.getKey(), category);
+        }
         continue;
       }
       String value = String.valueOf(supplied).strip();
@@ -99,6 +104,24 @@ public class FormSchemaService {
       if (category != null) {
         requireModel(field.getKey(), value, category);
       }
+    }
+  }
+
+  /**
+   * A model left on « automatic » runs whichever one the platform picks; when none of the category
+   * can run (no worker up, no engine), the run is refused here by name instead of waiting for a
+   * machine.
+   */
+  private void requireSomeModelRuns(String field, String category) {
+    Optional<List<ModelChoice>> choices = modelOptions.options(category);
+    if (choices.isPresent()
+        && !choices.get().isEmpty()
+        && choices.get().stream().noneMatch(ModelChoice::available)) {
+      throw new IllegalArgumentException(
+          field
+              + ": no "
+              + category
+              + " model is available right now. Try again in a few minutes.");
     }
   }
 
@@ -158,6 +181,9 @@ public class FormSchemaService {
       if (choice.unavailableReason() != null) {
         meta.put("unavailableReason", choice.unavailableReason());
       }
+      if (choice.unavailableCode() != null) {
+        meta.put("unavailableCode", choice.unavailableCode());
+      }
       if (choice.isDefault()) {
         defaultValue = choice.value();
       }
@@ -192,7 +218,12 @@ public class FormSchemaService {
     JsonNode options = spec.path(OPTIONS);
     if (SOURCE_MODELS.equals(options.path("source").asString())) {
       String category = options.path("category").asString();
-      return category == null || category.isBlank() ? null : category;
+      // The catalogue's categories are lowercase: « CHAT » asked for a category that has no model
+      // and drew an
+      // empty select on the form (dev, 2026-10-20).
+      return category == null || category.isBlank()
+          ? null
+          : category.strip().toLowerCase(Locale.ROOT);
     }
     return null;
   }

@@ -47,6 +47,16 @@ public class RunSweeper {
   private static final String BATCH_TIMEOUT_KEY = "run.step-timeout-seconds.batch";
   private static final int BATCH_FALLBACK_SECONDS = 1800;
 
+  /**
+   * The longest a run may stay in flight, whatever its steps say (orazaka#266): a run that no step
+   * is waiting on (a fan-out that expanded to nothing, a lost event) is invisible to the per-step
+   * ceilings, and holds one of its actor's concurrent-run slots until someone cancels it. A run
+   * waiting for a person (approval, input) is not in flight and is never reaped here.
+   */
+  private static final String RUN_MAX_KEY = "run.max-seconds";
+
+  private static final int RUN_MAX_FALLBACK_SECONDS = 4 * 3600;
+
   /** The lane a step that never declared one is judged by — the one that waits (ADR-067). */
   private static final String DEFAULT_LANE = "BATCH";
 
@@ -103,35 +113,71 @@ public class RunSweeper {
           run.id(),
           run.lane(),
           ceiling);
-
-      String reason =
-          "a " + run.lane() + " step exceeded the " + ceiling + "s ceiling and never reported back";
-      // The sweeper is the fourth producer of a failed run, and under ADR-053 it declares its cause
-      // like the other three. A step that stopped reporting is TIMEOUT by definition: the platform
-      // lost track of work it had accepted, which releases the hold and blames nobody.
-      jdbcTemplate.update(
-          "UPDATE studio_run SET status = ?, error_message = ?, failure_cause = ?,"
-              + " finished_at = now() WHERE id = ? AND finished_at IS NULL",
-          RunStatus.FAILED.name(),
-          reason,
-          FailureCause.TIMEOUT.name(),
-          run.id());
-      jdbcTemplate.update(
-          "UPDATE studio_run_step SET status = ?, finished_at = now()"
-              + " WHERE run_id = ? AND status IN (?, ?)",
-          RunStepStatus.FAILED.name(),
-          run.id(),
-          RunStepStatus.PENDING.name(),
-          RunStepStatus.RUNNING.name());
-
-      // The whole point: a stranded run must not strand its credits with it.
-      settlementService.releaseAbandoned(run.holdId(), "swept: step exceeded its ceiling");
-      // And a protected run that ended this way must appear in its own trail. Before ADR-053 a
-      // swept SENSITIVE run left no audit row at all — the one terminal path that recorded
-      // nothing, which is the hole a trail cannot have.
-      runAuditService.recordFinished(
-          run.id(), run.actorId(), run.studioKey(), false, FailureCause.TIMEOUT);
+      fail(
+          run,
+          "a " + run.lane() + " step exceeded the " + ceiling + "s ceiling and never reported back",
+          "swept: step exceeded its ceiling");
     }
+
+    sweepOverdueRuns();
+  }
+
+  /** Fails the runs that have been in flight longer than {@code run.max-seconds}. */
+  private void sweepOverdueRuns() {
+    int maxSeconds =
+        Math.max(60, runtimeConfigService.intValue(RUN_MAX_KEY, RUN_MAX_FALLBACK_SECONDS));
+    List<StaleRun> overdue =
+        jdbcTemplate.query(
+            "SELECT id, hold_id, actor_id, studio_key FROM studio_run"
+                + " WHERE finished_at IS NULL AND status = ?"
+                + " AND started_at < now() - make_interval(secs => ?)",
+            (rs, rowNum) ->
+                new StaleRun(
+                    rs.getObject("id", UUID.class),
+                    rs.getString("hold_id"),
+                    rs.getString("actor_id"),
+                    rs.getString("studio_key"),
+                    "RUN"),
+            RunStatus.RUNNING.name(),
+            maxSeconds);
+    for (StaleRun run : overdue) {
+      logger.warn(
+          "Run {} has been in flight past {}s — failing it and releasing its hold",
+          run.id(),
+          maxSeconds);
+      fail(
+          run,
+          "the run was still in flight after " + maxSeconds + "s and was closed",
+          "swept: run exceeded its maximum duration");
+    }
+  }
+
+  private void fail(StaleRun run, String reason, String releaseNote) {
+    // The sweeper is the fourth producer of a failed run, and under ADR-053 it declares its cause
+    // like the other three. A step that stopped reporting is TIMEOUT by definition: the platform
+    // lost track of work it had accepted, which releases the hold and blames nobody.
+    jdbcTemplate.update(
+        "UPDATE studio_run SET status = ?, error_message = ?, failure_cause = ?,"
+            + " finished_at = now() WHERE id = ? AND finished_at IS NULL",
+        RunStatus.FAILED.name(),
+        reason,
+        FailureCause.TIMEOUT.name(),
+        run.id());
+    jdbcTemplate.update(
+        "UPDATE studio_run_step SET status = ?, finished_at = now()"
+            + " WHERE run_id = ? AND status IN (?, ?)",
+        RunStepStatus.FAILED.name(),
+        run.id(),
+        RunStepStatus.PENDING.name(),
+        RunStepStatus.RUNNING.name());
+
+    // The whole point: a stranded run must not strand its credits with it.
+    settlementService.releaseAbandoned(run.holdId(), releaseNote);
+    // And a protected run that ended this way must appear in its own trail. Before ADR-053 a
+    // swept SENSITIVE run left no audit row at all — the one terminal path that recorded
+    // nothing, which is the hole a trail cannot have.
+    runAuditService.recordFinished(
+        run.id(), run.actorId(), run.studioKey(), false, FailureCause.TIMEOUT);
   }
 
   /** A run with a step that stopped reporting, and the lane whose ceiling it passed. */

@@ -41,6 +41,7 @@ class FormSchemaServiceTest {
           "Local default.",
           false,
           "FLUX.2 [klein] 4B is not running (its engine could not be reached)",
+          "gpu_offline",
           false);
   private static final ModelChoice SD35 =
       new ModelChoice(
@@ -54,6 +55,7 @@ class FormSchemaServiceTest {
           "Hosted.",
           true,
           null,
+          null,
           true);
 
   private final ObjectMapper json = new ObjectMapper();
@@ -64,6 +66,26 @@ class FormSchemaServiceTest {
 
   private static ModelOptionsClient catalogue(ModelChoice... choices) {
     return category -> "image".equals(category) ? Optional.of(List.of(choices)) : Optional.empty();
+  }
+
+  @Test
+  @DisplayName("A category written in capitals still reaches the catalogue's lowercase one")
+  void categoryCaseDoesNotMatter() {
+    String shouting = SCHEMA.replace("\"category\":\"image\"", "\"category\":\"IMAGE\"");
+
+    JsonNode model =
+        json.readTree(service(catalogue(SD35, FLUX)).forForm(shouting))
+            .path("properties")
+            .path("model");
+
+    assertThat(model.path("oneOf")).hasSize(2);
+    assertThat(model.path("default").asString()).isEqualTo("stable-diffusion-3.5-large");
+    assertThatThrownBy(
+            () ->
+                service(catalogue(SD35, FLUX))
+                    .requireClosedSets(shouting, Map.of("model", "not-a-model")))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("is not a image model");
   }
 
   @Test
@@ -87,6 +109,10 @@ class FormSchemaServiceTest {
     JsonNode second = model.path("oneOf").get(1);
     assertThat(second.path("x-meta").path("available").asBoolean()).isFalse();
     assertThat(second.path("x-meta").path("unavailableReason").asString()).contains("FLUX.2");
+    assertThat(second.path("x-meta").path("unavailableCode").asString())
+        .as("a client words the reason in its own language from the code")
+        .isEqualTo("gpu_offline");
+    assertThat(first.path("x-meta").has("unavailableCode")).isFalse();
     assertThat(second.path("x-meta").has("priceCents")).as("free: no price").isFalse();
   }
 
@@ -204,6 +230,29 @@ class FormSchemaServiceTest {
             () ->
                 service(category -> Optional.empty())
                     .requireClosedSets(SCHEMA, Map.of("model", "anything")))
+        .doesNotThrowAnyException();
+  }
+
+  @Test
+  @DisplayName(
+      "A blank model while nothing of the category can run is refused by name, not left to wait for a machine")
+  void blankModelWithNothingRunnableIsRefused() {
+    FormSchemaService service = service(catalogue(FLUX));
+
+    assertThatThrownBy(() -> service.requireClosedSets(SCHEMA, Map.of("prompt", "a cat")))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("model: no image model is available right now");
+    assertThatThrownBy(() -> service.requireClosedSets(SCHEMA, Map.of("model", " ")))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("no image model is available right now");
+  }
+
+  @Test
+  @DisplayName("A schema with no model field never asks the catalogue about a blank one")
+  void noModelFieldNoCheck() {
+    String schema = "{\"properties\":{\"prompt\":{\"type\":\"string\"}}}";
+
+    assertThatCode(() -> service(catalogue(FLUX)).requireClosedSets(schema, Map.of("prompt", "x")))
         .doesNotThrowAnyException();
   }
 }

@@ -255,4 +255,41 @@ class FormSchemaServiceTest {
     assertThatCode(() -> service(catalogue(FLUX)).requireClosedSets(schema, Map.of("prompt", "x")))
         .doesNotThrowAnyException();
   }
+
+  // ── « Automatic » is resolved to the model that will run, so the step is routed by it
+  // ───────────────
+
+  @Test
+  @DisplayName(
+      "A blank model is filled with the runnable default of its category: the run records which model ran and its queue follows")
+  void blankModelIsResolvedToTheRunnableDefault() {
+    FormSchemaService service = service(catalogue(FLUX, SD35));
+
+    Map<String, Object> resolved =
+        service.withResolvedModels(SCHEMA, Map.of("prompt", "a cat", "model", " "));
+
+    assertThat(resolved)
+        .containsEntry("model", "stable-diffusion-3.5-large")
+        .containsEntry("prompt", "a cat");
+    assertThat(service.withResolvedModels(SCHEMA, Map.of("prompt", "a cat")))
+        .containsEntry("model", "stable-diffusion-3.5-large");
+  }
+
+  @Test
+  @DisplayName(
+      "A model the person chose is never replaced; no runnable default leaves the inputs as they are; no model field, no change")
+  void namedModelAndUnknownsAreLeftAlone() {
+    assertThat(
+            service(catalogue(FLUX, SD35))
+                .withResolvedModels(SCHEMA, Map.of("model", "flux-2-klein-4b")))
+        .containsEntry("model", "flux-2-klein-4b");
+    assertThat(service(catalogue(FLUX)).withResolvedModels(SCHEMA, Map.of("prompt", "x")))
+        .doesNotContainKey("model");
+    assertThat(
+            service(category -> Optional.empty()).withResolvedModels(SCHEMA, Map.of("prompt", "x")))
+        .doesNotContainKey("model");
+    String noModel = "{\"properties\":{\"prompt\":{\"type\":\"string\"}}}";
+    assertThat(service(catalogue(SD35)).withResolvedModels(noModel, Map.of("prompt", "x")))
+        .isEqualTo(Map.of("prompt", "x"));
+  }
 }

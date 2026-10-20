@@ -112,6 +112,42 @@ public class FormSchemaService {
    * can run (no worker up, no engine), the run is refused here by name instead of waiting for a
    * machine.
    */
+  /**
+   * The inputs with every blank catalogue-fed model field filled by the default that runs now — «
+   * Automatic » made explicit. The step is then routed by the model it will really use (a hosted
+   * model waits in a different queue than a GPU one), and the run records which model made the
+   * result. A model the person chose, a category with no runnable default, or a catalogue that
+   * could not be asked leaves the inputs as they are.
+   *
+   * @param inputSchema the blueprint's raw input schema
+   * @param inputs what the actor answered
+   * @return the inputs to run with (a new map when something was filled)
+   */
+  public Map<String, Object> withResolvedModels(String inputSchema, Map<String, Object> inputs) {
+    JsonNode root = parse(inputSchema);
+    if (root == null || !root.path("properties").isObject()) {
+      return inputs;
+    }
+    Map<String, Object> resolved = null;
+    for (Map.Entry<String, JsonNode> field : root.path("properties").properties()) {
+      String category = modelCategory(field.getValue());
+      Object supplied = inputs.get(field.getKey());
+      if (category == null || (supplied != null && !String.valueOf(supplied).isBlank())) {
+        continue;
+      }
+      Optional<ModelChoice> running =
+          modelOptions.options(category).stream()
+              .flatMap(List::stream)
+              .filter(ModelChoice::available)
+              .min(java.util.Comparator.comparing((ModelChoice choice) -> !choice.isDefault()));
+      if (running.isPresent()) {
+        resolved = resolved == null ? new java.util.HashMap<>(inputs) : resolved;
+        resolved.put(field.getKey(), running.get().value());
+      }
+    }
+    return resolved == null ? inputs : Map.copyOf(resolved);
+  }
+
   private void requireSomeModelRuns(String field, String category) {
     Optional<List<ModelChoice>> choices = modelOptions.options(category);
     if (choices.isPresent()

@@ -94,7 +94,10 @@ class StepDispatchDurabilityIT {
                 new CapabilityRoute(
                     featureKey, "job.media.generate", null, "IMAGE", "BATCH", true));
     adapter =
-        new AmqpStepExecutionAdapter(new OutboxService(jdbcTemplate, new ObjectMapper()), routing);
+        new AmqpStepExecutionAdapter(
+            new OutboxService(jdbcTemplate, new ObjectMapper()),
+            routing,
+            category -> java.util.Optional.empty());
   }
 
   @AfterAll

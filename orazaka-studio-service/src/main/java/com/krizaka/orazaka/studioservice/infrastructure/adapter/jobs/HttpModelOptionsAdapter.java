@@ -29,6 +29,7 @@ class HttpModelOptionsAdapter implements ModelOptionsClient {
   private static final Logger logger = LoggerFactory.getLogger(HttpModelOptionsAdapter.class);
 
   private static final String OPTIONS_PATH = "/internal/v1/models/options?category={category}";
+  private static final String QUEUE_PATH = "/internal/v1/models/queue?model={model}";
   private static final long ANSWER_TTL_MILLIS = 15_000;
   private static final long FAILURE_TTL_MILLIS = 3_000;
 
@@ -36,6 +37,10 @@ class HttpModelOptionsAdapter implements ModelOptionsClient {
   private final ConcurrentHashMap<String, Cached> cache = new ConcurrentHashMap<>();
 
   private record Cached(Optional<List<ModelChoice>> options, long expiresAt) {}
+
+  private record CachedQueue(Optional<String> key, long expiresAt) {}
+
+  private final ConcurrentHashMap<String, CachedQueue> queues = new ConcurrentHashMap<>();
 
   HttpModelOptionsAdapter(
       RestClient.Builder restClientBuilder,
@@ -79,6 +84,37 @@ class HttpModelOptionsAdapter implements ModelOptionsClient {
       return Optional.ofNullable(options);
     } catch (RuntimeException e) {
       logger.warn("Model options lookup failed for category {}: {}", category, e.toString());
+      return Optional.empty();
+    }
+  }
+
+  @Override
+  public Optional<String> queueOf(String model) {
+    if (model == null || model.isBlank()) {
+      return Optional.empty();
+    }
+    long now = System.currentTimeMillis();
+    CachedQueue cached = queues.get(model);
+    if (cached != null && cached.expiresAt() > now) {
+      return cached.key();
+    }
+    Optional<String> fetched = fetchQueue(model);
+    queues.put(model, new CachedQueue(fetched, now + ANSWER_TTL_MILLIS));
+    return fetched;
+  }
+
+  private Optional<String> fetchQueue(String model) {
+    try {
+      java.util.Map<String, String> body =
+          jobPlaneClient
+              .get()
+              .uri(QUEUE_PATH, model)
+              .retrieve()
+              .body(new ParameterizedTypeReference<java.util.Map<String, String>>() {});
+      return body == null ? Optional.empty() : Optional.ofNullable(body.get("routingKey"));
+    } catch (RuntimeException e) {
+      // Unknown is not "another queue": the capability's own key stays.
+      logger.warn("Model queue lookup failed for {}: {}", model, e.toString());
       return Optional.empty();
     }
   }

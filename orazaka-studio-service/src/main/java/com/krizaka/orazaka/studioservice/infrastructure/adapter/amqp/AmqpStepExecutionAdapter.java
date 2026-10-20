@@ -6,6 +6,7 @@ import com.krizaka.orazaka.jobs.domain.model.JobCommand;
 import com.krizaka.orazaka.jobs.domain.port.CapabilityRoutingClient;
 import com.krizaka.orazaka.studio.domain.model.StepDispatch;
 import com.krizaka.orazaka.studioservice.application.service.OutboxService;
+import com.krizaka.orazaka.studioservice.domain.port.ModelOptionsClient;
 import com.krizaka.orazaka.studioservice.domain.port.StepExecutionClient;
 import java.util.HashMap;
 import java.util.Map;
@@ -65,9 +66,13 @@ class AmqpStepExecutionAdapter implements StepExecutionClient {
 
   private final OutboxService outboxService;
   private final CapabilityRoutingClient capabilityRoutingClient;
+  private final ModelOptionsClient modelOptions;
 
   AmqpStepExecutionAdapter(
-      OutboxService outboxService, CapabilityRoutingClient capabilityRoutingClient) {
+      OutboxService outboxService,
+      CapabilityRoutingClient capabilityRoutingClient,
+      ModelOptionsClient modelOptions) {
+    this.modelOptions = Objects.requireNonNull(modelOptions, "ModelOptionsClient cannot be null");
     this.outboxService = Objects.requireNonNull(outboxService, "OutboxService cannot be null");
     this.capabilityRoutingClient =
         Objects.requireNonNull(capabilityRoutingClient, "CapabilityRoutingClient cannot be null");
@@ -160,7 +165,7 @@ class AmqpStepExecutionAdapter implements StepExecutionClient {
     // write (ADR-065).
     command.put("dataClass", dispatch.dataClass().name());
 
-    String routingKey = route.routingKey();
+    String routingKey = queueFor(route, dispatch.resolvedInputs());
     // Through the outbox, in the saga's own transaction (ADR-067). This was `convertAndSend` from
     // inside `RunSagaService.advance`, which is @Transactional: a rollback afterwards left the job
     // running against a step row that no longer existed, and the hold it had taken lives in the
@@ -176,6 +181,33 @@ class AmqpStepExecutionAdapter implements StepExecutionClient {
         jobId,
         routingKey);
     return jobId;
+  }
+
+  /**
+   * The key a step is published with: its capability's, unless the model it names is run by another
+   * queue — a model a provider hosts is routed by a cheap CPU worker on its own queue, a
+   * self-hosted one by the GPU worker. Only a capability that waits on an external worker is ever
+   * moved (the job plane answers for the others).
+   */
+  private String queueFor(CapabilityRoute route, Map<String, Object> inputs) {
+    Object model = inputs == null ? null : inputs.get("model");
+    if (model == null || String.valueOf(model).isBlank()) {
+      return route.routingKey();
+    }
+    return modelOptions
+        .queueOf(String.valueOf(model).strip())
+        .filter(key -> sameFamilyAs(route.routingKey(), key))
+        .orElse(route.routingKey());
+  }
+
+  /**
+   * The same capability family: {@code job.video.generate} may become {@code
+   * job.hostedvideo.generate}, never a text key.
+   */
+  private static boolean sameFamilyAs(String own, String candidate) {
+    String ownFamily = own.split("\\.")[1];
+    String family = candidate.split("\\.")[1];
+    return family.equals(ownFamily) || family.equals("hosted" + ownFamily);
   }
 
   /**

@@ -3,6 +3,7 @@ package com.krizaka.orazaka.studioservice.infrastructure.adapter.persistence;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.krizaka.orazaka.studioservice.domain.model.DueWebhook;
+import com.krizaka.orazaka.studioservice.domain.model.WebhookEndpoint;
 import com.krizaka.orazaka.test.architecture.SqlBoundaryRules;
 import com.krizaka.test.container.ServiceRoles;
 import com.zaxxer.hikari.HikariDataSource;
@@ -159,15 +160,15 @@ class JdbcWebhookDeliveryStoreAdapterIT {
 
     List<DueWebhook> first = store.claimDue(10, Duration.ofSeconds(60));
     assertThat(first).hasSize(1);
-    assertThat(first.get(0).payload()).contains("\"run.completed\"").contains(run.toString());
-    assertThat(first.get(0).secret()).isEqualTo("whsec_current");
+    assertThat(first.getFirst().payload()).contains("\"run.completed\"").contains(run.toString());
+    assertThat(first.getFirst().secret()).isEqualTo("whsec_current");
     assertThat(store.claimDue(10, Duration.ofSeconds(60))).as("leased").isEmpty();
 
-    UUID delivery = first.get(0).id();
+    UUID delivery = first.getFirst().id();
     store.retryLater(delivery, 503, "the receiver answered 503", Duration.ZERO);
     List<DueWebhook> again = store.claimDue(10, Duration.ofSeconds(60));
     assertThat(again).hasSize(1);
-    assertThat(again.get(0).attempts()).isEqualTo(1);
+    assertThat(again.getFirst().attempts()).isEqualTo(1);
 
     store.delivered(delivery, 200);
     assertThat(store.claimDue(10, Duration.ZERO)).isEmpty();
@@ -185,7 +186,7 @@ class JdbcWebhookDeliveryStoreAdapterIT {
     endpoint("a1", "run.failed");
     finishedRun("a1", "FAILED");
     store.enqueueFinishedRuns();
-    UUID delivery = store.claimDue(10, Duration.ZERO).get(0).id();
+    UUID delivery = store.claimDue(10, Duration.ZERO).getFirst().id();
 
     store.dead(delivery, 500, "the receiver answered 500");
 
@@ -206,12 +207,13 @@ class JdbcWebhookDeliveryStoreAdapterIT {
         endpoint);
     finishedRun("a1", "SUCCEEDED");
     store.enqueueFinishedRuns();
-    assertThat(store.claimDue(10, Duration.ZERO).get(0).previousSecret()).isEqualTo("whsec_old");
+    assertThat(store.claimDue(10, Duration.ZERO).getFirst().previousSecret())
+        .isEqualTo("whsec_old");
 
     jdbc.update("UPDATE studio_webhook_delivery SET next_attempt_at = now()");
     jdbc.update(
         "UPDATE studio_webhook_endpoint SET previous_secret_until = now() - interval '1 minute'");
-    assertThat(store.claimDue(10, Duration.ZERO).get(0).previousSecret()).isNull();
+    assertThat(store.claimDue(10, Duration.ZERO).getFirst().previousSecret()).isNull();
   }
 
   @Test
@@ -225,7 +227,7 @@ class JdbcWebhookDeliveryStoreAdapterIT {
 
     assertThat(repository.count("a1")).isEqualTo(1);
     assertThat(repository.list("a1"))
-        .extracting(e -> e.url())
+        .extracting(WebhookEndpoint::url)
         .containsExactly("https://hooks.example.com/mine");
     assertThat(repository.find("a2", mine.id())).as("another actor's id").isEmpty();
     assertThat(repository.rotate("a2", mine.id(), "whsec_x", Duration.ofHours(1))).isFalse();

@@ -113,13 +113,13 @@ class WebhookDispatchServiceTest {
     due = List.of(webhook(0, null));
     service().sweep();
 
-    Map<String, String> headers = sentHeaders.get(0);
+    Map<String, String> headers = sentHeaders.getFirst();
     assertThat(headers.get("webhook-id")).isEqualTo("msg_00000000-0000-0000-0000-000000000001");
     assertThat(headers.get("webhook-timestamp")).isEqualTo("1700000000");
     assertThat(headers.get("webhook-signature"))
         .isEqualTo(
             WebhookSignature.sign(
-                "s3cret", headers.get("webhook-id"), 1_700_000_000L, sentBodies.get(0)));
+                "s3cret", headers.get("webhook-id"), 1_700_000_000L, sentBodies.getFirst()));
   }
 
   @Test
@@ -127,7 +127,7 @@ class WebhookDispatchServiceTest {
     due = List.of(webhook(0, "old"));
     service().sweep();
 
-    String signature = sentHeaders.get(0).get("webhook-signature");
+    String signature = sentHeaders.getFirst().get("webhook-signature");
     assertThat(signature.split(" ")).hasSize(2);
     assertThat(signature.split(" ")[1])
         .isEqualTo(
@@ -135,7 +135,7 @@ class WebhookDispatchServiceTest {
                 "old",
                 "msg_00000000-0000-0000-0000-000000000001",
                 1_700_000_000L,
-                sentBodies.get(0)));
+                sentBodies.getFirst()));
   }
 
   @Test

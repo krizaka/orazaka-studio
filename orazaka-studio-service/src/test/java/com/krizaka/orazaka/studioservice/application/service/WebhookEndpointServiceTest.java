@@ -109,7 +109,7 @@ class WebhookEndpointServiceTest {
           "https:///x"
         }) {
       assertThatThrownBy(() -> service().create("a1", url, null))
-          .as(String.valueOf(url))
+          .as(url)
           .isInstanceOf(IllegalArgumentException.class);
     }
   }

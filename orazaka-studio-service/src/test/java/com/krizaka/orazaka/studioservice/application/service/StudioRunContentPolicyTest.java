@@ -105,7 +105,7 @@ class StudioRunContentPolicyTest {
             catalog,
             access,
             policy,
-            mock(FormSchemaService.class));
+            passthroughFormSchema());
   }
 
   private static Map<String, Object> inputs(String fixture) {
@@ -170,5 +170,18 @@ class StudioRunContentPolicyTest {
         .isInstanceOf(IllegalStateException.class)
         .hasMessage("past the policy");
     verify(credits).hold(anyString(), anyString(), anyLong());
+  }
+
+  /**
+   * A form-schema service that checks nothing and resolves no model: the inputs go through as they
+   * came.
+   */
+  private static FormSchemaService passthroughFormSchema() {
+    FormSchemaService service = mock(FormSchemaService.class);
+    org.mockito.Mockito.when(
+            service.withResolvedModels(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+        .thenAnswer(invocation -> invocation.getArgument(1));
+    return service;
   }
 }

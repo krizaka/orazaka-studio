@@ -4,6 +4,7 @@ import com.krizaka.orazaka.studio.domain.model.RunStatus;
 import com.krizaka.orazaka.studioservice.domain.exception.RunNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.exception.TooManyRunStreamsException;
 import com.krizaka.orazaka.studioservice.domain.model.RunDetail;
+import com.krizaka.orazaka.studioservice.domain.port.RunEventLog;
 import java.io.IOException;
 import java.time.Clock;
 import java.util.HashMap;
@@ -47,7 +48,8 @@ public class RunEventService {
     /**
      * The run, as it is now ({@code event: run}).
      *
-     * @param id the event number on this connection, from 1
+     * @param id the event number: the run's own on a single-run stream, the connection's from 1 on
+     *     the all-runs one
      * @param run the run
      * @throws IOException when the client is gone
      */
@@ -85,19 +87,26 @@ public class RunEventService {
 
   private final StudioRunService runs;
   private final StudioRuntimeConfigService config;
+  private final RunEventLog log;
   private final Clock clock;
   private final Sleeper sleeper;
   private final Map<String, AtomicInteger> openByActor = new ConcurrentHashMap<>();
 
   @Autowired
-  public RunEventService(StudioRunService runs, StudioRuntimeConfigService config) {
-    this(runs, config, Clock.systemUTC(), Thread::sleep);
+  public RunEventService(
+      StudioRunService runs, StudioRuntimeConfigService config, RunEventLog log) {
+    this(runs, config, log, Clock.systemUTC(), Thread::sleep);
   }
 
   RunEventService(
-      StudioRunService runs, StudioRuntimeConfigService config, Clock clock, Sleeper sleeper) {
+      StudioRunService runs,
+      StudioRuntimeConfigService config,
+      RunEventLog log,
+      Clock clock,
+      Sleeper sleeper) {
     this.runs = Objects.requireNonNull(runs, "StudioRunService cannot be null");
     this.config = Objects.requireNonNull(config, "StudioRuntimeConfigService cannot be null");
+    this.log = Objects.requireNonNull(log, "RunEventLog cannot be null");
     this.clock = clock;
     this.sleeper = sleeper;
   }
@@ -112,8 +121,40 @@ public class RunEventService {
    * @throws TooManyRunStreamsException when the actor holds as many streams as allowed
    */
   public Subscription subscribe(UUID runId, String actorId) {
+    return subscribe(runId, actorId, -1);
+  }
+
+  /**
+   * Opens a stream that resumes after a client's {@code Last-Event-ID}.
+   *
+   * @param runId the run
+   * @param actorId the opaque billable subject
+   * @param lastEventId the last event number the client saw, or a negative number for none
+   * @return the subscription
+   * @throws RunNotFoundException when the id names nothing this actor owns
+   * @throws TooManyRunStreamsException when the actor holds as many streams as allowed
+   */
+  public Subscription subscribe(UUID runId, String actorId, long lastEventId) {
     runs.find(runId, actorId).orElseThrow(() -> new RunNotFoundException(runId));
-    return new Subscription(runId, actorId, takeSlot(actorId));
+    return new Subscription(runId, actorId, takeSlot(actorId), lastEventId);
+  }
+
+  /**
+   * Whether a client that saw event {@code lastEventId} has already seen the end of the run: it is
+   * over and nothing changed since. Such a client is told to stop reconnecting.
+   *
+   * @param runId the run
+   * @param actorId the opaque billable subject
+   * @param lastEventId the last event number the client saw
+   * @return {@code true} when there is nothing left to send, ever
+   */
+  public boolean alreadySeenTheEnd(UUID runId, String actorId, long lastEventId) {
+    if (lastEventId < 0) {
+      return false;
+    }
+    boolean over =
+        runs.find(runId, actorId).map(run -> TERMINAL.contains(run.status())).orElse(false);
+    return over && log.currentSeq(runId, actorId).orElse(Long.MAX_VALUE) <= lastEventId;
   }
 
   /**
@@ -144,17 +185,22 @@ public class RunEventService {
     private final UUID runId;
     private final String actorId;
     private final AtomicInteger open;
+    private final long lastEventId;
     private boolean closed;
 
-    private Subscription(UUID runId, String actorId, AtomicInteger open) {
+    private Subscription(UUID runId, String actorId, AtomicInteger open, long lastEventId) {
       this.runId = runId;
       this.actorId = actorId;
       this.open = open;
+      this.lastEventId = lastEventId;
     }
 
     /**
-     * Sends the run's snapshots until it is over, the client leaves or the stream's time is up.
-     * Blocks; run it on its own (virtual) thread.
+     * Sends the run as it is now, each time its number moves, until it is over, the client leaves
+     * or the stream's time is up. The event id is the run's own number (see {@link RunEventLog}),
+     * the same on every instance, so a client that comes back with {@code Last-Event-ID} is sent
+     * something only when the run moved since; the snapshot is the run's current state, so the
+     * changes it missed are folded into it. Blocks; run it on its own (virtual) thread.
      *
      * @param sink where the events go
      * @throws IOException when the client is gone
@@ -165,22 +211,24 @@ public class RunEventService {
       long heartbeatMillis = Math.max(1, config.intValue(HEARTBEAT_SECONDS_KEY, 15)) * 1000L;
       long pollMillis = Math.max(100, config.intValue(POLL_MILLIS_KEY, 1500));
       long lastSent = clock.millis();
-      long id = 0;
-      RunDetail last = null;
+      long sent = lastEventId;
       while (sink.open() && clock.millis() < deadline) {
-        RunDetail run = runs.find(runId, actorId).orElse(null);
-        if (run == null) {
+        long seq = log.currentSeq(runId, actorId).orElse(-1);
+        if (seq < 0) {
           return;
         }
-        if (!run.equals(last)) {
-          id++;
-          last = run;
-          lastSent = clock.millis();
-          if (TERMINAL.contains(run.status())) {
-            sink.done(id, run);
+        if (seq > sent) {
+          RunDetail run = runs.find(runId, actorId).orElse(null);
+          if (run == null) {
             return;
           }
-          sink.snapshot(id, run);
+          sent = seq;
+          lastSent = clock.millis();
+          if (TERMINAL.contains(run.status())) {
+            sink.done(seq, run);
+            return;
+          }
+          sink.snapshot(seq, run);
         } else if (clock.millis() - lastSent >= heartbeatMillis) {
           lastSent = clock.millis();
           sink.heartbeat();

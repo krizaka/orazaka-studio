@@ -11,6 +11,7 @@ import com.krizaka.orazaka.studio.domain.model.RunStatus;
 import com.krizaka.orazaka.studioservice.domain.exception.RunNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.exception.TooManyRunStreamsException;
 import com.krizaka.orazaka.studioservice.domain.model.RunDetail;
+import com.krizaka.orazaka.studioservice.domain.port.RunEventLog;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -87,6 +88,7 @@ class RunEventServiceTest {
 
   private final StudioRunService runs = mock(StudioRunService.class);
   private final StudioRuntimeConfigService config = mock(StudioRuntimeConfigService.class);
+  private final RunEventLog log = mock(RunEventLog.class);
   private final FakeClock clock = new FakeClock();
   private final UUID runId = UUID.randomUUID();
   private RunEventService events;
@@ -94,7 +96,7 @@ class RunEventServiceTest {
   @BeforeEach
   void wire() {
     when(config.intValue(anyString(), anyInt())).thenAnswer(call -> call.getArgument(1));
-    events = new RunEventService(runs, config, clock, millis -> clock.now += millis);
+    events = new RunEventService(runs, config, log, clock, millis -> clock.now += millis);
   }
 
   private RunDetail run(RunStatus status) {
@@ -112,25 +114,37 @@ class RunEventServiceTest {
         null);
   }
 
-  /** The run reads as these states in turn, the last one for ever. */
-  private void reads(RunDetail... states) {
-    java.util.Iterator<RunDetail> next = List.of(states).iterator();
-    RunDetail[] current = new RunDetail[1];
-    when(runs.find(runId, ACTOR))
+  /**
+   * The run's number reads as these values in turn, the last one for ever; the run itself reads as
+   * the state that goes with the number last read.
+   */
+  private void story(long[] seqs, RunDetail... states) {
+    int[] at = {-1};
+    when(log.currentSeq(runId, ACTOR))
         .thenAnswer(
             call -> {
-              if (next.hasNext()) {
-                current[0] = next.next();
+              if (at[0] < seqs.length - 1) {
+                at[0]++;
               }
-              return Optional.of(current[0]);
+              return java.util.OptionalLong.of(seqs[at[0]]);
             });
+    when(runs.find(runId, ACTOR))
+        .thenAnswer(call -> Optional.of(states[Math.min(Math.max(at[0], 0), states.length - 1)]));
   }
 
   @Test
-  @DisplayName("the current state is sent at once, and again only when it changes")
+  @DisplayName(
+      "the current state is sent at once, and again only when the run's number moves; the id is"
+          + " that number")
   void sendsOnChangeOnly() throws Exception {
-    RunDetail running = run(RunStatus.RUNNING);
-    reads(running, running, running, run(RunStatus.AWAITING_INPUT), run(RunStatus.SUCCEEDED));
+    // numbers read: 4 (subscribe is a find, not a number), then 4 4 5 7
+    story(
+        new long[] {4, 4, 4, 5, 7},
+        run(RunStatus.RUNNING),
+        run(RunStatus.RUNNING),
+        run(RunStatus.RUNNING),
+        run(RunStatus.AWAITING_INPUT),
+        run(RunStatus.SUCCEEDED));
     RecordingSink sink = new RecordingSink();
 
     try (var subscription = events.subscribe(runId, ACTOR)) {
@@ -138,27 +152,77 @@ class RunEventServiceTest {
     }
 
     assertThat(sink.events)
-        .containsExactly("run#1:RUNNING", "run#2:AWAITING_INPUT", "done#3:SUCCEEDED");
+        .containsExactly("run#4:RUNNING", "run#5:AWAITING_INPUT", "done#7:SUCCEEDED");
   }
 
   @Test
-  @DisplayName("a run already over answers one done event and the stream ends")
+  @DisplayName(
+      "a client that comes back with Last-Event-ID is sent nothing until the run moves past it")
+  void resumesAfterLastEventId() throws Exception {
+    story(
+        new long[] {5, 5, 6},
+        run(RunStatus.RUNNING),
+        run(RunStatus.RUNNING),
+        run(RunStatus.AWAITING_INPUT));
+    RecordingSink sink = new RecordingSink();
+    sink.closeAfter = 1;
+
+    try (var subscription = events.subscribe(runId, ACTOR, 5)) {
+      subscription.pump(sink);
+    }
+
+    assertThat(sink.events).containsExactly("run#6:AWAITING_INPUT");
+  }
+
+  @Test
+  @DisplayName(
+      "a client that missed several changes gets the run as it is now, under the latest number")
+  void missedChangesAreFoldedIntoTheCurrentState() throws Exception {
+    story(new long[] {9}, run(RunStatus.AWAITING_INPUT));
+    RecordingSink sink = new RecordingSink();
+    sink.closeAfter = 1;
+
+    try (var subscription = events.subscribe(runId, ACTOR, 3)) {
+      subscription.pump(sink);
+    }
+
+    assertThat(sink.events).containsExactly("run#9:AWAITING_INPUT");
+  }
+
+  @Test
+  @DisplayName("a run already over answers one done event under its number and the stream ends")
   void finishedRunEndsAtOnce() throws Exception {
-    reads(run(RunStatus.FAILED));
+    story(new long[] {12}, run(RunStatus.FAILED));
     RecordingSink sink = new RecordingSink();
 
     try (var subscription = events.subscribe(runId, ACTOR)) {
       subscription.pump(sink);
     }
 
-    assertThat(sink.events).containsExactly("done#1:FAILED");
+    assertThat(sink.events).containsExactly("done#12:FAILED");
+  }
+
+  @Test
+  @DisplayName("a client that already saw the end of a finished run is told to stop reconnecting")
+  void alreadySeenTheEnd() {
+    story(new long[] {12}, run(RunStatus.SUCCEEDED));
+    assertThat(events.alreadySeenTheEnd(runId, ACTOR, 12)).isTrue();
+    assertThat(events.alreadySeenTheEnd(runId, ACTOR, 15)).isTrue();
+    assertThat(events.alreadySeenTheEnd(runId, ACTOR, 11)).as("it missed the end").isFalse();
+    assertThat(events.alreadySeenTheEnd(runId, ACTOR, -1)).as("a first connection").isFalse();
+  }
+
+  @Test
+  @DisplayName("a run still going is never 'seen to its end'")
+  void aRunStillGoingIsNeverSeenToItsEnd() {
+    story(new long[] {12}, run(RunStatus.RUNNING));
+    assertThat(events.alreadySeenTheEnd(runId, ACTOR, 12)).isFalse();
   }
 
   @Test
   @DisplayName("a quiet stream sends a heartbeat so a proxy does not close it")
   void heartbeatWhenQuiet() throws Exception {
-    RunDetail running = run(RunStatus.RUNNING);
-    when(runs.find(runId, ACTOR)).thenReturn(Optional.of(running));
+    story(new long[] {1}, run(RunStatus.RUNNING));
     RecordingSink sink = new RecordingSink();
     sink.closeAfter = 3;
 
@@ -174,7 +238,7 @@ class RunEventServiceTest {
   @Test
   @DisplayName("the stream stops when the client is gone")
   void stopsWhenTheClientLeaves() throws Exception {
-    when(runs.find(runId, ACTOR)).thenReturn(Optional.of(run(RunStatus.RUNNING)));
+    story(new long[] {1}, run(RunStatus.RUNNING));
     RecordingSink sink = new RecordingSink();
     sink.closeAfter = 1;
 
@@ -189,7 +253,7 @@ class RunEventServiceTest {
   @DisplayName("a stream has a time limit: the client reconnects and gets a fresh snapshot")
   void endsAtTheMaximumDuration() throws Exception {
     when(config.intValue("run.events.max-seconds", 1800)).thenReturn(10);
-    when(runs.find(runId, ACTOR)).thenReturn(Optional.of(run(RunStatus.RUNNING)));
+    story(new long[] {1}, run(RunStatus.RUNNING));
     RecordingSink sink = new RecordingSink();
 
     try (var subscription = events.subscribe(runId, ACTOR)) {

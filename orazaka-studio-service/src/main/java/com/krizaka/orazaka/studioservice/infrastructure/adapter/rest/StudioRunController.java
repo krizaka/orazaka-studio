@@ -197,14 +197,32 @@ class StudioRunController {
    * 15 seconds keeps an idle connection open.
    *
    * @param runId the run
+   * @param lastEventId the {@code Last-Event-ID} an {@code EventSource} sends when it reconnects
    * @param actor the authenticated caller
-   * @return the stream; {@code 404} when the run is not the caller's, {@code 429} when the caller
-   *     already holds as many streams as allowed
+   * @return the stream; {@code 204} when the client has already seen the run's end; {@code 404}
+   *     when the run is not the caller's, {@code 429} when the caller already holds as many streams
+   *     as allowed
    */
   @GetMapping(value = "/runs/{runId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-  SseEmitter events(@PathVariable UUID runId, @AuthenticationPrincipal Jwt actor) {
-    RunEventService.Subscription subscription = events.subscribe(runId, actor.getSubject());
-    return stream(subscription, subscription::pump);
+  ResponseEntity<SseEmitter> events(
+      @PathVariable UUID runId,
+      @RequestHeader(value = "Last-Event-ID", required = false) String lastEventId,
+      @AuthenticationPrincipal Jwt actor) {
+    long seen = parseEventId(lastEventId);
+    if (events.alreadySeenTheEnd(runId, actor.getSubject(), seen)) {
+      // 204 tells an EventSource not to reconnect: it has seen the run's last event.
+      return ResponseEntity.noContent().build();
+    }
+    RunEventService.Subscription subscription = events.subscribe(runId, actor.getSubject(), seen);
+    return ResponseEntity.ok(stream(subscription, subscription::pump));
+  }
+
+  private static long parseEventId(String header) {
+    try {
+      return header == null ? -1 : Math.max(-1, Long.parseLong(header.strip()));
+    } catch (NumberFormatException malformed) {
+      return -1;
+    }
   }
 
   /**

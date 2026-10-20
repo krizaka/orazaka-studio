@@ -246,7 +246,7 @@ class RunEventServiceTest {
               if (next.hasNext()) {
                 current.set(0, next.next());
               }
-              return current.get(0);
+              return current.getFirst();
             });
   }
 

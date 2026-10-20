@@ -584,16 +584,55 @@ class StudioRunLifecycleIT {
     // The trail — append-only, outside every retention window — records the outcome's category…
     List<Map<String, Object>> trail =
         jdbcTemplate.queryForList(
-            "SELECT event, failure_cause, row_to_json(a)::text AS whole"
-                + " FROM studio_run_audit a WHERE run_id = ? AND event = 'RUN_FAILED'",
+            "SELECT event, failure_cause FROM studio_run_audit"
+                + " WHERE run_id = ? AND event = 'RUN_FAILED'",
             run.id());
     assertEquals(1, trail.size());
     assertEquals("GUARD_REFUSAL", trail.getFirst().get("failure_cause"));
     // …and nothing it matched: not the reviewed answer, not a fragment of it, in any column.
+    String whole = trailRowWithoutGeneratedColumns(run.id());
     assertFalse(
-        String.valueOf(trail.getFirst().get("whole")).contains("3114"),
-        "the trail keeps a permanent record of a crisis response: "
-            + trail.getFirst().get("whole"));
+        whole.contains("3114"),
+        "the trail keeps a permanent record of a crisis response: " + whole);
+    assertFalse(
+        whole.contains("accompagner"), "the trail keeps a fragment of the answer: " + whole);
+  }
+
+  /**
+   * A trail row's content, as text, without the columns the database fills in by itself.
+   *
+   * <p>{@code id}, {@code run_id} and {@code recorded_at} are a random UUID, the run's UUID and a
+   * microsecond timestamp: none of them can carry what a run matched, and every one of them can
+   * contain the digits «3114» by chance (about once in a few thousand runs — main CI run
+   * 39441705620 failed on exactly that). Every other column, including one added later, stays in
+   * the scan.
+   */
+  private static String trailRowWithoutGeneratedColumns(UUID runId) {
+    return jdbcTemplate.queryForObject(
+        "SELECT (row_to_json(a)::jsonb - 'id' - 'run_id' - 'recorded_at')::text"
+            + " FROM studio_run_audit a WHERE run_id = ? AND event = 'RUN_FAILED'",
+        String.class,
+        runId);
+  }
+
+  @Test
+  @DisplayName(
+      "the crisis-response scan reads the trail's content, not the digits of its generated columns")
+  void theCrisisScanIgnoresTheGeneratedColumns() {
+    // A run id and a timestamp that spell the digits of the crisis line by chance — the row that
+    // made the scan fail one run in a few thousand.
+    UUID unlucky = UUID.fromString("00003114-0000-4000-8000-000000000000");
+    jdbcTemplate.update(
+        "INSERT INTO studio_run_audit (id, run_id, actor_id, pack_key, studio_key, data_class,"
+            + " event, failure_cause, recorded_at)"
+            + " VALUES (?, ?, ?, 'trade-showcase', ?, 'REGULATED', 'RUN_FAILED', 'GUARD_REFUSAL',"
+            + " '2026-10-20 14:42:31.311400+00')",
+        UUID.fromString("31143114-3114-4114-8114-311431143114"),
+        unlucky,
+        ACTOR,
+        STUDIO_KEY);
+
+    assertFalse(trailRowWithoutGeneratedColumns(unlucky).contains("3114"));
   }
 
   @Test

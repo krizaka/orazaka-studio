@@ -90,6 +90,10 @@ CREATE TABLE pack (
     -- answers someone in crisis. Both are the pack's declarations; the engine holds neither.
     consent_version  VARCHAR(16),
     consent_statement TEXT,
+    -- The same statement in the other languages ({"en": "…"}); consent_statement is the default
+    -- language (French). Served by the server in the caller's language (orazaka#301): a legal
+    -- notice is never translated by whoever draws the screen.
+    consent_statements JSONB,
     safety           JSONB,
     status           VARCHAR(20) NOT NULL DEFAULT 'DRAFT',   -- DRAFT | PUBLISHED | WITHDRAWN
     sort_weight      INT         NOT NULL DEFAULT 0,
@@ -327,7 +331,7 @@ CREATE TABLE studio_run_audit (
     pack_key    VARCHAR(50)  NOT NULL,
     studio_key  VARCHAR(60)  NOT NULL,
     data_class  VARCHAR(20)  NOT NULL,
-    event       VARCHAR(40)  NOT NULL,          -- RUN_STARTED | RUN_SUCCEEDED | RUN_FAILED | SCOPE_REFUSED
+    event       VARCHAR(40)  NOT NULL,          -- RUN_STARTED | RUN_SUCCEEDED | RUN_FAILED | SCOPE_REFUSED | RUN_ERASED | DATA_ERASED
     step_id     VARCHAR(60),
     -- No `detail`. It was "a reason code, never user content" and carried the failed step's message
     -- — for a refusal, the pack's reviewed answer, a crisis response on a REGULATED pack. The trail

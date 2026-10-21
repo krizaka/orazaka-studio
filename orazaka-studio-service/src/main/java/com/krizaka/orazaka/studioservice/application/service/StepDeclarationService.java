@@ -6,8 +6,8 @@ import com.krizaka.orazaka.studio.domain.model.InstallationStatus;
 import com.krizaka.orazaka.studio.domain.model.PackScopeGuard;
 import com.krizaka.orazaka.studio.domain.model.RegulatoryClass;
 import com.krizaka.orazaka.studio.domain.model.TurnDeclarations;
+import com.krizaka.orazaka.studioservice.domain.policy.CrisisResources;
 import com.krizaka.orazaka.studioservice.infrastructure.support.ColumnValueResolver;
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -249,18 +249,7 @@ public class StepDeclarationService {
   }
 
   private static CrisisResource turnResourceFor(Map<String, Object> safety, String region) {
-    if (region == null
-        || !(safety.get("resources") instanceof Map<?, ?> byRegion)
-        || !(byRegion.get(region) instanceof Map<?, ?> resource)) {
-      return null;
-    }
-    return new CrisisResource(
-        String.valueOf(resource.get("region")),
-        String.valueOf(resource.get("label")),
-        String.valueOf(resource.get("contact")),
-        String.valueOf(resource.get("availability")),
-        String.valueOf(resource.get("sourceUrl")),
-        LocalDate.parse(String.valueOf(resource.get("verifiedOn"))));
+    return CrisisResources.forRegion(safety, region).orElse(null);
   }
 
   /** One installation joined to its pack row. */

@@ -63,15 +63,16 @@ class JdbcPackInstallRepositoryAdapter implements PackInstallRepository {
   private static final String UPSERT_PACK =
       """
       INSERT INTO pack (pack_key, category_key, icon_key, regulatory_class, kind, scope_guard,
-                        consent_version, consent_statement, safety, status,
-                        sort_weight, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?::jsonb, ?, ?, now())
+                        consent_version, consent_statement, consent_statements, safety,
+                        status, sort_weight, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?::jsonb, ?::jsonb, ?, ?, now())
       ON CONFLICT (pack_key) DO UPDATE SET
         category_key = EXCLUDED.category_key, icon_key = EXCLUDED.icon_key,
         regulatory_class = EXCLUDED.regulatory_class, kind = EXCLUDED.kind,
         scope_guard = EXCLUDED.scope_guard,
         consent_version = EXCLUDED.consent_version,
-        consent_statement = EXCLUDED.consent_statement, safety = EXCLUDED.safety,
+        consent_statement = EXCLUDED.consent_statement,
+        consent_statements = EXCLUDED.consent_statements, safety = EXCLUDED.safety,
         status = EXCLUDED.status,
         sort_weight = EXCLUDED.sort_weight, updated_at = now()
       """;
@@ -281,6 +282,9 @@ class JdbcPackInstallRepositoryAdapter implements PackInstallRepository {
         scopeGuardJson(bundle),
         bundle.consent() == null ? null : bundle.consent().version(),
         bundle.consent() == null ? null : bundle.consent().statement(),
+        bundle.consent() == null || bundle.consent().statements().isEmpty()
+            ? null
+            : columns.json(bundle.consent().statements()),
         safetyJson(bundle),
         catalog.status().name(),
         catalog.sortWeight());

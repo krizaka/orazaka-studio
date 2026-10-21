@@ -260,7 +260,9 @@ class StudioInstallationServiceTest {
   }
 
   private static final String SOURCED_FR_ONLY =
-      "{\"resources\":{\"FR\":{\"region\":\"FR\",\"contact\":\"3114\"}}}";
+      "{\"resources\":{\"FR\":{\"region\":\"FR\",\"label\":\"3114\",\"contact\":\"3114\","
+          + "\"availability\":\"24h/24\",\"sourceUrl\":\"https://3114.fr/\","
+          + "\"verifiedOn\":\"2026-10-20\"}}}";
 
   @Test
   @DisplayName("[ADR-055] a REGULATED pack does not install without consent — 451, with the text")

@@ -1,6 +1,8 @@
 package com.krizaka.orazaka.studioservice.application.service;
 
+import com.krizaka.orazaka.studio.domain.model.CrisisResource;
 import com.krizaka.orazaka.studio.domain.model.InstallationStatus;
+import com.krizaka.orazaka.studio.domain.model.PackConsent;
 import com.krizaka.orazaka.studio.domain.model.PackKind;
 import com.krizaka.orazaka.studio.domain.model.Studio;
 import com.krizaka.orazaka.studioservice.domain.exception.ConsentRequiredException;
@@ -10,6 +12,7 @@ import com.krizaka.orazaka.studioservice.domain.exception.StudioNotFoundExceptio
 import com.krizaka.orazaka.studioservice.domain.model.BlueprintVersion;
 import com.krizaka.orazaka.studioservice.domain.model.InstallConsent;
 import com.krizaka.orazaka.studioservice.domain.model.InstalledStudio;
+import com.krizaka.orazaka.studioservice.domain.policy.CrisisResources;
 import com.krizaka.orazaka.studioservice.infrastructure.support.ColumnValueResolver;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -19,6 +22,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -138,7 +142,7 @@ public class StudioInstallationService {
 
     Map<String, String> validated = validateConfig(studioKey, pinned.version(), config);
     RegulatoryRequirements required = requirementsOf(studioKey);
-    required.check(studioKey, consent);
+    required.check(studioKey, consent, locale);
 
     jdbcTemplate.update(
         "INSERT INTO studio_installation (actor_id, studio_key, pinned_version, status, config,"
@@ -177,32 +181,26 @@ public class StudioInstallationService {
     return jdbcTemplate
         .query(
             """
-            SELECT p.regulatory_class, p.consent_version, p.consent_statement, p.safety
+            SELECT p.regulatory_class, p.consent_version, p.consent_statement,
+                   p.consent_statements, p.safety
               FROM pack_studio ps JOIN pack p ON p.pack_key = ps.pack_key
              WHERE ps.studio_key = ?
             """,
-            (rs, rowNum) ->
-                new RegulatoryRequirements(
-                    rs.getString("regulatory_class"),
-                    rs.getString("consent_version"),
-                    rs.getString("consent_statement"),
-                    availableRegions(rs.getString("safety"))),
+            (rs, rowNum) -> {
+              List<CrisisResource> lines =
+                  CrisisResources.of(columns.objectMap(rs.getString("safety")));
+              return new RegulatoryRequirements(
+                  rs.getString("regulatory_class"),
+                  rs.getString("consent_version"),
+                  rs.getString("consent_statement"),
+                  columns.stringMap(rs.getString("consent_statements")),
+                  lines,
+                  lines.stream().map(CrisisResource::region).collect(Collectors.toSet()));
+            },
             studioKey)
         .stream()
         .findFirst()
         .orElse(RegulatoryRequirements.NONE);
-  }
-
-  /** The regions a pack declared a verified crisis resource for; empty when it declared none. */
-  private Set<String> availableRegions(String safetyJson) {
-    if (safetyJson == null || safetyJson.isBlank()) {
-      return Set.of();
-    }
-    Map<String, Object> safety = columns.objectMap(safetyJson);
-    Object resources = safety.get("resources");
-    return resources instanceof Map<?, ?> map
-        ? map.keySet().stream().map(String::valueOf).collect(java.util.stream.Collectors.toSet())
-        : Set.of();
   }
 
   /**
@@ -210,17 +208,21 @@ public class StudioInstallationService {
    *
    * @param regulatoryClass the class the pack declared
    * @param consentVersion the statement version now in force, {@code null} below REGULATED
-   * @param consentStatement what the user must agree to
+   * @param consentStatement what the user must agree to, in the default language
+   * @param consentStatements the same statement in the other languages, keyed by language
+   * @param crisisLines the verified crisis line of each region the pack installs in
    * @param availableRegions the regions with a verified crisis resource
    */
   private record RegulatoryRequirements(
       String regulatoryClass,
       String consentVersion,
       String consentStatement,
+      Map<String, String> consentStatements,
+      List<CrisisResource> crisisLines,
       Set<String> availableRegions) {
 
     static final RegulatoryRequirements NONE =
-        new RegulatoryRequirements("STANDARD", null, null, Set.of());
+        new RegulatoryRequirements("STANDARD", null, null, Map.of(), List.of(), Set.of());
 
     /** Whether this pack is in the class that adds consent and crisis handling. */
     boolean isRegulated() {
@@ -232,13 +234,20 @@ public class StudioInstallationService {
      *
      * @param studioKey the Studio, for the message
      * @param consent what the caller declared
+     * @param locale the caller's language: the statement is served in it, by the server
      */
-    void check(String studioKey, InstallConsent consent) {
+    void check(String studioKey, InstallConsent consent, String locale) {
       if (!isRegulated()) {
         return;
       }
       if (consent == null || !Objects.equals(consentVersion, consent.consentVersion())) {
-        throw new ConsentRequiredException(studioKey, consentVersion, consentStatement);
+        throw new ConsentRequiredException(
+            studioKey,
+            consentVersion,
+            new PackConsent(consentVersion, consentStatement, consentStatements)
+                .statementFor(locale),
+            new PackConsent(consentVersion, consentStatement, consentStatements).allStatements(),
+            crisisLines);
       }
       if (!consent.ageAttested()) {
         // Self-declared, and weak. It is the only evidence available without collecting a birth

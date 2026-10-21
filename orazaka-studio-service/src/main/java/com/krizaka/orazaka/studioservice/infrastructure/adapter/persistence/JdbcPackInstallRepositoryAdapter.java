@@ -235,7 +235,34 @@ class JdbcPackInstallRepositoryAdapter implements PackInstallRepository {
         return false;
       }
     }
-    return true;
+    return consentIsCurrent(bundle);
+  }
+
+  /**
+   * Whether the pack row already says what the bundle's consent says.
+   *
+   * <p>A consent statement is not a blueprint: bumping its version (or its words, or a translation)
+   * changes no Studio version, and "applied" judged by the Studios alone never wrote the new
+   * statement - so a changed statement never reached an environment that already had the pack, and
+   * "bumping the version re-asks every installation" (ADR-055 section 3) was true only on a fresh
+   * database (orazaka#301). Re-applying is idempotent: blueprints are {@code DO NOTHING}.
+   */
+  private boolean consentIsCurrent(PackBundle bundle) {
+    if (!bundle.isCatalogued() || bundle.consent() == null) {
+      return true;
+    }
+    return jdbcTemplate
+        .query(
+            "SELECT consent_version, consent_statement, consent_statements::text FROM pack"
+                + " WHERE pack_key = ?",
+            (rs, rowNum) ->
+                bundle.consent().version().equals(rs.getString(1))
+                    && bundle.consent().statement().equals(rs.getString(2))
+                    && bundle.consent().statements().equals(columns.stringMap(rs.getString(3))),
+            bundle.key())
+        .stream()
+        .findFirst()
+        .orElse(false);
   }
 
   private void writeCategory(PackBundle bundle) {

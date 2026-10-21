@@ -2,10 +2,15 @@ package com.krizaka.orazaka.studioservice.infrastructure.adapter.persistence;
 
 import com.krizaka.orazaka.studioservice.domain.model.DueWebhook;
 import com.krizaka.orazaka.studioservice.domain.port.WebhookDeliveryStore;
+import com.krizaka.orazaka.studioservice.domain.port.WebhookSecretSealer;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -22,10 +27,15 @@ class JdbcWebhookDeliveryStoreAdapter implements WebhookDeliveryStore {
   /** Finished runs older than this are not queued: a sweep that long missing is an outage. */
   private static final String RECENT = "interval '2 days'";
 
-  private final JdbcTemplate jdbcTemplate;
+  private static final Logger logger =
+      LoggerFactory.getLogger(JdbcWebhookDeliveryStoreAdapter.class);
 
-  JdbcWebhookDeliveryStoreAdapter(JdbcTemplate jdbcTemplate) {
+  private final JdbcTemplate jdbcTemplate;
+  private final WebhookSecretSealer sealer;
+
+  JdbcWebhookDeliveryStoreAdapter(JdbcTemplate jdbcTemplate, WebhookSecretSealer sealer) {
     this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "JdbcTemplate cannot be null");
+    this.sealer = Objects.requireNonNull(sealer, "WebhookSecretSealer cannot be null");
   }
 
   @Override
@@ -52,29 +62,42 @@ class JdbcWebhookDeliveryStoreAdapter implements WebhookDeliveryStore {
 
   @Override
   public List<DueWebhook> claimDue(int limit, Duration lease) {
-    return jdbcTemplate.query(
-        "WITH claimed AS (UPDATE studio_webhook_delivery SET"
-            + "   next_attempt_at = now() + make_interval(secs => ?)"
-            + " WHERE id IN (SELECT d.id FROM studio_webhook_delivery d"
-            + "   JOIN studio_webhook_endpoint e ON e.id = d.endpoint_id AND e.enabled"
-            + "   WHERE d.status = 'PENDING' AND d.next_attempt_at <= now()"
-            + "   ORDER BY d.next_attempt_at LIMIT ? FOR UPDATE OF d SKIP LOCKED)"
-            + " RETURNING id, endpoint_id, event, payload, attempts)"
-            + " SELECT c.id, e.url, c.event, c.payload, c.attempts, e.secret,"
-            + "   CASE WHEN e.previous_secret IS NOT NULL AND e.previous_secret_until > now()"
-            + "     THEN e.previous_secret END AS previous_secret"
-            + " FROM claimed c JOIN studio_webhook_endpoint e ON e.id = c.endpoint_id",
-        (rs, rowNum) ->
-            new DueWebhook(
-                rs.getObject("id", UUID.class),
-                rs.getString("url"),
-                rs.getString("event"),
-                rs.getString("payload"),
-                rs.getInt("attempts"),
-                rs.getString("secret"),
-                rs.getString("previous_secret")),
-        lease.toSeconds(),
-        limit);
+    List<DueWebhook> due =
+        jdbcTemplate.query(
+            "WITH claimed AS (UPDATE studio_webhook_delivery SET"
+                + "   next_attempt_at = now() + make_interval(secs => ?)"
+                + " WHERE id IN (SELECT d.id FROM studio_webhook_delivery d"
+                + "   JOIN studio_webhook_endpoint e ON e.id = d.endpoint_id AND e.enabled"
+                + "   WHERE d.status = 'PENDING' AND d.next_attempt_at <= now()"
+                + "   ORDER BY d.next_attempt_at LIMIT ? FOR UPDATE OF d SKIP LOCKED)"
+                + " RETURNING id, endpoint_id, event, payload, attempts)"
+                + " SELECT c.id, c.endpoint_id, e.url, c.event, c.payload, c.attempts, e.secret,"
+                + "   CASE WHEN e.previous_secret IS NOT NULL AND e.previous_secret_until > now()"
+                + "     THEN e.previous_secret END AS previous_secret"
+                + " FROM claimed c JOIN studio_webhook_endpoint e ON e.id = c.endpoint_id",
+            (rs, rowNum) -> due(rs),
+            lease.toSeconds(),
+            limit);
+    return due.stream().filter(Objects::nonNull).toList();
+  }
+
+  /** The delivery with its secrets opened, or {@code null} when they do not open (never sent). */
+  private DueWebhook due(ResultSet rs) throws SQLException {
+    UUID endpoint = rs.getObject("endpoint_id", UUID.class);
+    String previous = rs.getString("previous_secret");
+    try {
+      return new DueWebhook(
+          rs.getObject("id", UUID.class),
+          rs.getString("url"),
+          rs.getString("event"),
+          rs.getString("payload"),
+          rs.getInt("attempts"),
+          sealer.open(endpoint, rs.getString("secret")),
+          previous == null ? null : sealer.open(endpoint, previous));
+    } catch (IllegalStateException unreadable) {
+      logger.error("The signing secret of webhook endpoint {} does not open; skipped", endpoint);
+      return null;
+    }
   }
 
   @Override

@@ -566,8 +566,8 @@ CREATE TABLE IF NOT EXISTS studio_webhook_endpoint (
     id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     actor_id              VARCHAR(255) NOT NULL,          -- OPAQUE — no FK into identity
     url                   TEXT         NOT NULL,
-    secret                VARCHAR(120) NOT NULL,
-    previous_secret       VARCHAR(120),
+    secret                TEXT         NOT NULL,          -- SEALED: v1.<key>.<wrapped>.<nonce>.<ciphertext> (master keyring, ADR-054)
+    previous_secret       TEXT,                           -- sealed too
     previous_secret_until TIMESTAMPTZ,
     events                TEXT         NOT NULL DEFAULT 'run.completed,run.failed',
     enabled               BOOLEAN      NOT NULL DEFAULT TRUE,

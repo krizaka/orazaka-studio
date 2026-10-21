@@ -40,6 +40,13 @@
             <artifactId>orazaka-jobs-api</artifactId>
         </dependency>
 
+        <!-- The platform's master keyring (ADR-054): the webhook signing secrets are sealed under it
+             at rest, as the automation service seals a trigger's (ADR-084 §1). -->
+        <dependency>
+            <groupId>com.krizaka.orazaka</groupId>
+            <artifactId>orazaka-assets</artifactId>
+        </dependency>
+
         <!-- Tier-1 billing contract: one hold per run, entitlement gates access (ADR-033).
              The IMPLEMENTATION (krizaka-billing-service) is another context's Tier-3 and is
              never imported — SEAM-002. -->

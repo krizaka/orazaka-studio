@@ -7,5 +7,7 @@ package com.krizaka.orazaka.studioservice.domain.model;
  * @param entries runs removed (inputs and outputs)
  * @param installations installations removed, with the consent they recorded
  * @param jobs jobs removed from the job plane (rows and files)
+ * @param conversations conversations whose memory (voice and listening turns) was removed
  */
-public record ErasureReceipt(String packKey, int entries, int installations, int jobs) {}
+public record ErasureReceipt(
+    String packKey, int entries, int installations, int jobs, int conversations) {}

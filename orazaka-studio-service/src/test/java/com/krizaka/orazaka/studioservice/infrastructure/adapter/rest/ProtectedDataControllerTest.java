@@ -26,11 +26,12 @@ class ProtectedDataControllerTest {
   @Test
   @DisplayName("erase-all acts for the token's subject, never for an id in the request")
   void eraseAllActsForTheTokenSubject() {
-    when(service.eraseAll(ACTOR, "bien-etre")).thenReturn(new ErasureReceipt("bien-etre", 3, 2, 3));
+    when(service.eraseAll(ACTOR, "bien-etre"))
+        .thenReturn(new ErasureReceipt("bien-etre", 3, 2, 3, 2));
 
     ErasureResponse response = controller.eraseAll("bien-etre", ACTOR_JWT);
 
-    assertThat(response).isEqualTo(new ErasureResponse("bien-etre", 3, 2, 3));
+    assertThat(response).isEqualTo(new ErasureResponse("bien-etre", 3, 2, 3, 2));
   }
 
   @Test

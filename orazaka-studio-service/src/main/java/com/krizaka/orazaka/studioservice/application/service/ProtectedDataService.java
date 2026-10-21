@@ -8,6 +8,7 @@ import com.krizaka.orazaka.studioservice.domain.exception.RunNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.model.ConsentNotice;
 import com.krizaka.orazaka.studioservice.domain.model.ErasureReceipt;
 import com.krizaka.orazaka.studioservice.domain.policy.CrisisResources;
+import com.krizaka.orazaka.studioservice.domain.port.ConversationErasureClient;
 import com.krizaka.orazaka.studioservice.domain.port.JobErasureClient;
 import com.krizaka.orazaka.studioservice.infrastructure.support.ColumnValueResolver;
 import java.util.ArrayList;
@@ -42,7 +43,8 @@ import org.springframework.transaction.annotation.Transactional;
  *       write is not best-effort: if it fails the erasure rolls back and is asked again.
  *   <li><b>All or nothing across services.</b> The job plane is asked first, inside the
  *       transaction; if it cannot erase everything, nothing here is deleted and the caller is told
- *       to ask again - never that the data is gone when part of it is not.
+ *       to ask again - never that the data is gone when part of it is not. The conversation service
+ *       is asked the same way, for the memory of voice and listening turns.
  * </ul>
  */
 @Service
@@ -59,6 +61,7 @@ public class ProtectedDataService {
   private final StudioRunService runService;
   private final RunAuditService auditService;
   private final JobErasureClient jobErasure;
+  private final ConversationErasureClient conversationErasure;
 
   public ProtectedDataService(
       JdbcTemplate jdbcTemplate,
@@ -66,13 +69,16 @@ public class ProtectedDataService {
       StudioRuntimeConfigService runtimeConfig,
       StudioRunService runService,
       RunAuditService auditService,
-      JobErasureClient jobErasure) {
+      JobErasureClient jobErasure,
+      ConversationErasureClient conversationErasure) {
     this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "JdbcTemplate cannot be null");
     this.columns = Objects.requireNonNull(columns, "ColumnValueResolver required");
     this.runtimeConfig = Objects.requireNonNull(runtimeConfig, "config required");
     this.runService = Objects.requireNonNull(runService, "StudioRunService required");
     this.auditService = Objects.requireNonNull(auditService, "RunAuditService required");
     this.jobErasure = Objects.requireNonNull(jobErasure, "JobErasureClient required");
+    this.conversationErasure =
+        Objects.requireNonNull(conversationErasure, "ConversationErasureClient required");
   }
 
   /**
@@ -146,6 +152,10 @@ public class ProtectedDataService {
             actorId,
             packKey);
 
+    // The memory of voice and listening turns is the conversation service's. Asked first, before
+    // anything of ours is deleted: if it cannot erase, nothing is, and the person is told to ask
+    // again (idempotent on its side).
+    int conversations = conversationErasure.erase(actorId, packKey);
     int jobs = eraseRuns(actorId, runs);
     int removedInstallations = 0;
     if (!installations.isEmpty()) {
@@ -160,16 +170,17 @@ public class ProtectedDataService {
       auditService.recordErased(
           installation.id(), actorId, installation.studioKey(), dataClass, true);
     }
-    if (!runs.isEmpty() || removedInstallations > 0) {
+    if (!runs.isEmpty() || removedInstallations > 0 || conversations > 0) {
       // Counts only: what was erased is never logged, and neither is who asked.
       logger.info(
-          "Erased pack {}: {} entries, {} installations, {} jobs",
+          "Erased pack {}: {} entries, {} installations, {} jobs, {} conversations",
           packKey,
           runs.size(),
           removedInstallations,
-          jobs);
+          jobs,
+          conversations);
     }
-    return new ErasureReceipt(packKey, runs.size(), removedInstallations, jobs);
+    return new ErasureReceipt(packKey, runs.size(), removedInstallations, jobs, conversations);
   }
 
   /**

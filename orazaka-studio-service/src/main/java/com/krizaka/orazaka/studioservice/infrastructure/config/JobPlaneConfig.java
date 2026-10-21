@@ -11,5 +11,8 @@ import org.springframework.context.annotation.Configuration;
  * service's configuration would be a second copy of a table that has one owner (ADR-037).
  */
 @Configuration(proxyBeanMethods = false)
-@EnableConfigurationProperties(CapabilityRoutingProperties.class)
+@EnableConfigurationProperties({
+  CapabilityRoutingProperties.class,
+  ConversationPlaneProperties.class
+})
 public class JobPlaneConfig {}

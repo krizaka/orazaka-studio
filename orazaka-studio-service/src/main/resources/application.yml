@@ -73,14 +73,11 @@ logging:
 
 # ── Orazaka — service-owned wiring ────────────────────────────────────────────
 orazaka:
-  # Asset encryption (ADR-054), as the job and automation services configure it: the webhook signing secrets are sealed with the
+  # Master keyring (ADR-054), the same file the job and automation services read: the webhook signing secrets are sealed with the
   # platform's master keyring (run-services.sh writes ~/.orazaka/master.key before the JVMs start).
   assets:
     encryption:
-      enabled: ${ASSETS_ENCRYPTION_ENABLED:true}
       master-key-file: ${ASSETS_MASTER_KEY_FILE:${user.home}/.orazaka/master.key}
-      block-size: ${ASSETS_BLOCK_SIZE:65536}
-      accept-plaintext: ${ASSETS_ACCEPT_PLAINTEXT:false}
   studio-service:
     datasource:
       url: ${STUDIO_DB_URL:jdbc:postgresql://localhost:5432/orazaka_studio_db}

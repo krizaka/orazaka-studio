@@ -6,9 +6,11 @@ import com.krizaka.orazaka.studio.domain.exception.StudioNotEntitledException;
 import com.krizaka.orazaka.studio.domain.exception.TurnConsentRequiredException;
 import com.krizaka.orazaka.studioservice.domain.exception.ConsentRequiredException;
 import com.krizaka.orazaka.studioservice.domain.exception.ContentPolicyRefusedException;
+import com.krizaka.orazaka.studioservice.domain.exception.ErasureIncompleteException;
 import com.krizaka.orazaka.studioservice.domain.exception.IdempotencyKeyReusedException;
 import com.krizaka.orazaka.studioservice.domain.exception.InstallationNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.exception.PackInstallException;
+import com.krizaka.orazaka.studioservice.domain.exception.PackNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.exception.RunNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.exception.StudioIncludedException;
 import com.krizaka.orazaka.studioservice.domain.exception.StudioNotFoundException;
@@ -18,6 +20,7 @@ import com.krizaka.orazaka.studioservice.domain.exception.TooManyRunStreamsExcep
 import com.krizaka.orazaka.studioservice.domain.exception.TooManyWebhookEndpointsException;
 import com.krizaka.orazaka.studioservice.domain.exception.WebhookEndpointNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.model.ContentDecision;
+import com.krizaka.orazaka.studioservice.infrastructure.adapter.rest.dto.CrisisLineResponse;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -335,8 +338,45 @@ public class RestErrorResolver {
     body.put(MESSAGE_KEY, ex.getMessage());
     body.put("studioKey", ex.studioKey());
     body.put("consentVersion", ex.requiredVersion());
+    // In the caller's language (?locale=), chosen by the server; the other languages and the
+    // regions with their verified crisis lines travel too, so every client shows the same notice
+    // and the line a person would be given before they agree to anything.
     body.put("statement", ex.statement());
+    body.put("statements", ex.statements());
+    body.put("regions", ex.regions().stream().map(CrisisLineResponse::from).toList());
     return ResponseEntity.status(HttpStatus.UNAVAILABLE_FOR_LEGAL_REASONS).body(body);
+  }
+
+  /**
+   * Maps a pack that does not exist, or that holds no protected data, to {@code 404}.
+   *
+   * @param ex the miss
+   * @return {@code 404}
+   */
+  @ExceptionHandler(PackNotFoundException.class)
+  public ResponseEntity<Map<String, Object>> handlePackNotFound(PackNotFoundException ex) {
+    return ResponseEntity.status(HttpStatus.NOT_FOUND)
+        .body(Map.of(STATUS_KEY, "pack_not_found", MESSAGE_KEY, "No such pack"));
+  }
+
+  /**
+   * Maps an erasure that could not be completed to {@code 503}: nothing was deleted, so the person
+   * is told to ask again and never that their data is gone.
+   *
+   * @param ex the failure
+   * @return {@code 503}
+   */
+  @ExceptionHandler(ErasureIncompleteException.class)
+  public ResponseEntity<Map<String, Object>> handleErasureIncomplete(
+      ErasureIncompleteException ex) {
+    logger.error("An erasure could not be completed: {}", ex.getMessage());
+    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+        .body(
+            Map.of(
+                STATUS_KEY,
+                "erasure_incomplete",
+                MESSAGE_KEY,
+                "Nothing was deleted; please ask again"));
   }
 
   /**

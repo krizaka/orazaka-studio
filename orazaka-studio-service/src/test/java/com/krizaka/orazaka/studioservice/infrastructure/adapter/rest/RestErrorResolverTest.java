@@ -170,4 +170,70 @@ class RestErrorResolverTest {
     assertThat(response.getBody()).containsKey("packKey");
     assertThat(response.getBody().get("packKey")).isNull();
   }
+
+  @Test
+  @DisplayName(
+      "[orazaka#301] the 451 carries the statement in the caller's language, every language and the regions' verified lines")
+  void theConsentRefusalCarriesStatementsAndVerifiedLines() {
+    var line =
+        new com.krizaka.orazaka.studio.domain.model.CrisisResource(
+            "CA-QC",
+            "Ligne québécoise de prévention du suicide",
+            "1 866 APPELLE (1 866 277-3553)",
+            "En tout temps",
+            "https://www.quebec.ca/",
+            java.time.LocalDate.parse("2026-10-11"));
+
+    ResponseEntity<Map<String, Object>> response =
+        resolver.handleConsentRequired(
+            new com.krizaka.orazaka.studioservice.domain.exception.ConsentRequiredException(
+                "mood-tracking",
+                "2.0",
+                "This Studio records what you write.",
+                Map.of("fr", "Ce Studio enregistre.", "en", "This Studio records what you write."),
+                List.of(line)));
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAVAILABLE_FOR_LEGAL_REASONS);
+    assertThat(response.getBody())
+        .containsEntry("status", "consent_required")
+        .containsEntry("consentVersion", "2.0")
+        .containsEntry("statement", "This Studio records what you write.")
+        .containsEntry(
+            "statements",
+            Map.of("fr", "Ce Studio enregistre.", "en", "This Studio records what you write."));
+    assertThat(response.getBody().get("regions"))
+        .isEqualTo(
+            List.of(
+                new com.krizaka.orazaka.studioservice.infrastructure.adapter.rest.dto
+                    .CrisisLineResponse(
+                    "CA-QC",
+                    "Ligne québécoise de prévention du suicide",
+                    "1 866 APPELLE (1 866 277-3553)",
+                    "En tout temps",
+                    "https://www.quebec.ca/",
+                    "2026-10-11")));
+  }
+
+  @Test
+  @DisplayName(
+      "[orazaka#301] an erasure that could not be completed is 503 and says nothing was deleted")
+  void anIncompleteErasureIs503() {
+    ResponseEntity<Map<String, Object>> response =
+        resolver.handleErasureIncomplete(
+            new com.krizaka.orazaka.studioservice.domain.exception.ErasureIncompleteException(
+                "the job plane is down", null));
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+    assertThat(response.getBody()).containsEntry("status", "erasure_incomplete");
+  }
+
+  @Test
+  @DisplayName("[orazaka#301] a pack that holds no protected data has nothing to erase: 404")
+  void anUnknownPackIs404() {
+    ResponseEntity<Map<String, Object>> response =
+        resolver.handlePackNotFound(
+            new com.krizaka.orazaka.studioservice.domain.exception.PackNotFoundException("nope"));
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+  }
 }

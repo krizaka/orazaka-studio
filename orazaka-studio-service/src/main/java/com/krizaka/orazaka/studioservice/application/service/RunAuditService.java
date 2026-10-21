@@ -90,6 +90,38 @@ public class RunAuditService {
         succeeded ? null : (cause == null ? FailureCause.EXECUTOR_FAULT : cause).name());
   }
 
+  /**
+   * Records that a person erased their data: the minimal proof that the withdrawal happened.
+   *
+   * <p>Unlike the other events this one is <b>not</b> written best-effort: an erasure nobody can
+   * later show was done is half a compliance answer, so a failure here rolls the erasure back and
+   * the person is told to ask again. It holds the same four facts as every row of this trail - who,
+   * which pack and Studio, the class, when - and never a word of what was erased.
+   *
+   * @param subjectId the run erased, or the installation whose data was erased as a whole
+   * @param actorId the opaque actor
+   * @param studioKey the Studio
+   * @param dataClass the class of the erased material
+   * @param wholeStudio {@code true} for "erase all my data" ({@code DATA_ERASED}), {@code false}
+   *     for a single entry ({@code RUN_ERASED})
+   */
+  public void recordErased(
+      UUID subjectId, String actorId, String studioKey, DataClass dataClass, boolean wholeStudio) {
+    if (dataClass == null || !dataClass.isProtected()) {
+      return;
+    }
+    jdbcTemplate.update(
+        INSERT,
+        subjectId,
+        actorId,
+        studioKey,
+        dataClass.name(),
+        wholeStudio ? "DATA_ERASED" : "RUN_ERASED",
+        null,
+        null,
+        studioKey);
+  }
+
   /** What the run itself says its class is; STANDARD when the run is already gone. */
   private DataClass dataClassOf(UUID runId) {
     return jdbcTemplate

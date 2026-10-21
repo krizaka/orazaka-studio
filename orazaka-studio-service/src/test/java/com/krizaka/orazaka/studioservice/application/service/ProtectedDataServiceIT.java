@@ -509,6 +509,7 @@ class ProtectedDataServiceIT {
   private static final class FakeConversationPlane implements ConversationErasureClient {
     final List<String> asked = new ArrayList<>();
     boolean failing;
+    private boolean erased;
 
     @Override
     public int erase(String actorId, String packKey) {
@@ -516,7 +517,10 @@ class ProtectedDataServiceIT {
         throw new ErasureIncompleteException("the conversation service is down", null);
       }
       asked.add(actorId + "/" + packKey);
-      return 2;
+      // Idempotent like the real one: the second time there is nothing left.
+      int conversations = erased ? 0 : 2;
+      erased = true;
+      return conversations;
     }
   }
 }

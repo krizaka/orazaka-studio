@@ -2,11 +2,14 @@ package com.krizaka.orazaka.studioservice.infrastructure.adapter.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.krizaka.orazaka.assets.infrastructure.adapter.FileMasterKeyProvider;
 import com.krizaka.orazaka.studioservice.domain.model.DueWebhook;
 import com.krizaka.orazaka.studioservice.domain.model.WebhookEndpoint;
+import com.krizaka.orazaka.studioservice.domain.policy.WebhookSignature;
 import com.krizaka.orazaka.test.architecture.SqlBoundaryRules;
 import com.krizaka.test.container.ServiceRoles;
 import com.zaxxer.hikari.HikariDataSource;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
@@ -17,6 +20,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 import org.testcontainers.utility.MountableFile;
@@ -48,6 +52,8 @@ class JdbcWebhookDeliveryStoreAdapterIT {
   private static HikariDataSource dataSource;
   private static JdbcTemplate jdbc;
   private static JdbcWebhookDeliveryStoreAdapter store;
+  private static MasterKeyWebhookSecretSealer sealer;
+  private static WebhookSecretMigration migration;
 
   @BeforeAll
   static void start() {
@@ -67,7 +73,16 @@ class JdbcWebhookDeliveryStoreAdapterIT {
     dataSource.setUsername(STUDIO_ROLE);
     dataSource.setPassword(STUDIO_PASSWORD);
     jdbc = new JdbcTemplate(dataSource);
-    store = new JdbcWebhookDeliveryStoreAdapter(jdbc);
+    try {
+      Path keyring = Files.createTempDirectory("keyring").resolve("master.key");
+      FileMasterKeyProvider.addKey(keyring, "k1");
+      sealer = new MasterKeyWebhookSecretSealer(new FileMasterKeyProvider(keyring));
+    } catch (java.io.IOException e) {
+      throw new IllegalStateException(e);
+    }
+    store = new JdbcWebhookDeliveryStoreAdapter(jdbc, sealer);
+    migration =
+        new WebhookSecretMigration(jdbc, new DataSourceTransactionManager(dataSource), sealer);
   }
 
   @AfterAll
@@ -89,10 +104,11 @@ class JdbcWebhookDeliveryStoreAdapterIT {
     UUID id = UUID.randomUUID();
     jdbc.update(
         "INSERT INTO studio_webhook_endpoint (id, actor_id, url, secret, events, created_at)"
-            + " VALUES (?, ?, 'https://hooks.example.com/x', 'whsec_current', ?,"
+            + " VALUES (?, ?, 'https://hooks.example.com/x', ?, ?,"
             + " now() - interval '1 hour')",
         id,
         actor,
+        sealer.seal(id, "whsec_current"),
         events);
     return id;
   }
@@ -202,8 +218,9 @@ class JdbcWebhookDeliveryStoreAdapterIT {
   void previousSecretHonouredUntilItsDate() {
     UUID endpoint = endpoint("a1", "run.completed");
     jdbc.update(
-        "UPDATE studio_webhook_endpoint SET previous_secret = 'whsec_old',"
+        "UPDATE studio_webhook_endpoint SET previous_secret = ?,"
             + " previous_secret_until = now() + interval '1 hour' WHERE id = ?",
+        sealer.seal(endpoint, "whsec_old"),
         endpoint);
     finishedRun("a1", "SUCCEEDED");
     store.enqueueFinishedRuns();
@@ -219,7 +236,7 @@ class JdbcWebhookDeliveryStoreAdapterIT {
   @Test
   @DisplayName("The endpoint repository is scoped to its actor: create, list, rotate, log, delete")
   void endpointRepositoryIsScopedToTheActor() {
-    var repository = new JdbcWebhookEndpointRepositoryAdapter(jdbc);
+    var repository = new JdbcWebhookEndpointRepositoryAdapter(jdbc, sealer);
     var mine =
         repository.create(
             "a1", "https://hooks.example.com/mine", List.of("run.completed"), "whsec_one");
@@ -232,12 +249,15 @@ class JdbcWebhookDeliveryStoreAdapterIT {
     assertThat(repository.find("a2", mine.id())).as("another actor's id").isEmpty();
     assertThat(repository.rotate("a2", mine.id(), "whsec_x", Duration.ofHours(1))).isFalse();
     assertThat(repository.rotate("a1", mine.id(), "whsec_three", Duration.ofHours(1))).isTrue();
-    assertThat(
-            jdbc.queryForObject(
-                "SELECT previous_secret || '>' || secret FROM studio_webhook_endpoint WHERE id = ?",
-                String.class,
-                mine.id()))
-        .isEqualTo("whsec_one>whsec_three");
+    // Rotation keeps working: both secrets open, the old one is the previous, the new one current.
+    finishedRun("a1", "SUCCEEDED");
+    jdbc.update("UPDATE studio_webhook_endpoint SET created_at = now() - interval '1 hour'");
+    store.enqueueFinishedRuns();
+    DueWebhook rotated = store.claimDue(10, Duration.ZERO).getFirst();
+    assertThat(rotated.secret()).isEqualTo("whsec_three");
+    assertThat(rotated.previousSecret()).isEqualTo("whsec_one");
+    jdbc.update("DELETE FROM studio_webhook_delivery");
+    jdbc.update("DELETE FROM studio_run");
 
     finishedRun("a1", "SUCCEEDED");
     jdbc.update("UPDATE studio_webhook_endpoint SET created_at = now() - interval '1 hour'");
@@ -250,5 +270,104 @@ class JdbcWebhookDeliveryStoreAdapterIT {
     assertThat(jdbc.queryForObject("SELECT count(*) FROM studio_webhook_delivery", Integer.class))
         .as("the log goes with it")
         .isZero();
+  }
+
+  @Test
+  @DisplayName("The secret column holds ciphertext, never the secret, on create and on rotation")
+  void columnHoldsCiphertext() {
+    var repository = new JdbcWebhookEndpointRepositoryAdapter(jdbc, sealer);
+    var created =
+        repository.create(
+            "a1", "https://hooks.example.com/x", List.of("run.completed"), "whsec_clear_one");
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT secret FROM studio_webhook_endpoint WHERE id = ?",
+                String.class,
+                created.id()))
+        .startsWith("v1.")
+        .doesNotContain("whsec_clear_one");
+
+    repository.rotate("a1", created.id(), "whsec_clear_two", Duration.ofHours(1));
+    var row =
+        jdbc.queryForMap(
+            "SELECT secret, previous_secret FROM studio_webhook_endpoint WHERE id = ?",
+            created.id());
+    assertThat(row.values())
+        .allSatisfy(
+            value ->
+                assertThat((String) value)
+                    .startsWith("v1.")
+                    .doesNotContain("whsec_clear_one")
+                    .doesNotContain("whsec_clear_two"));
+  }
+
+  @Test
+  @DisplayName("A delivery is still signed with the real secret, through ciphertext at rest")
+  void sendingStillSignsCorrectly() {
+    var repository = new JdbcWebhookEndpointRepositoryAdapter(jdbc, sealer);
+    var created =
+        repository.create(
+            "a1", "https://hooks.example.com/x", List.of("run.completed"), "whsec_sign_me");
+    finishedRun("a1", "SUCCEEDED");
+    jdbc.update("UPDATE studio_webhook_endpoint SET created_at = now() - interval '1 hour'");
+    store.enqueueFinishedRuns();
+    DueWebhook due = store.claimDue(10, Duration.ZERO).getFirst();
+
+    var headers =
+        WebhookSignature.headers(
+            due.secret(), due.previousSecret(), "msg_1", 1_700_000_000L, due.payload());
+
+    assertThat(headers.get(WebhookSignature.SIGNATURE))
+        .isEqualTo(WebhookSignature.sign("whsec_sign_me", "msg_1", 1_700_000_000L, due.payload()));
+    assertThat(created.id()).isNotNull();
+  }
+
+  @Test
+  @DisplayName("A secret sealed for one endpoint does not open for another")
+  void aSealedSecretIsBoundToItsEndpoint() {
+    String sealed = sealer.seal(UUID.randomUUID(), "whsec_x");
+    org.assertj.core.api.Assertions.assertThatThrownBy(() -> sealer.open(UUID.randomUUID(), sealed))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageNotContaining("whsec_x");
+  }
+
+  @Test
+  @DisplayName(
+      "The migration seals the rows stored in the clear, keeps their value, and is idempotent")
+  void migrationConvertsExistingRows() {
+    // A row as the previous version stored it: a clear secret, a clear previous secret.
+    jdbc.execute("ALTER TABLE studio_webhook_endpoint ALTER COLUMN secret TYPE VARCHAR(120)");
+    jdbc.execute(
+        "ALTER TABLE studio_webhook_endpoint ALTER COLUMN previous_secret TYPE VARCHAR(120)");
+    UUID clear = UUID.randomUUID();
+    UUID alreadySealed = UUID.randomUUID();
+    jdbc.update(
+        "INSERT INTO studio_webhook_endpoint (id, actor_id, url, secret, previous_secret,"
+            + " previous_secret_until) VALUES (?, 'a1', 'https://hooks.example.com/x',"
+            + " 'whsec_legacy', 'whsec_legacy_old', now() + interval '1 hour')",
+        clear);
+    assertThat(migration.run()).isEqualTo(1);
+
+    var row =
+        jdbc.queryForMap(
+            "SELECT secret, previous_secret FROM studio_webhook_endpoint WHERE id = ?", clear);
+    assertThat(sealer.open(clear, (String) row.get("secret"))).isEqualTo("whsec_legacy");
+    assertThat(sealer.open(clear, (String) row.get("previous_secret")))
+        .isEqualTo("whsec_legacy_old");
+    assertThat(row.values()).allSatisfy(v -> assertThat((String) v).doesNotContain("whsec_"));
+    String sealedBefore = sealer.seal(alreadySealed, "whsec_new");
+    jdbc.update(
+        "INSERT INTO studio_webhook_endpoint (id, actor_id, url, secret) VALUES (?, 'a2',"
+            + " 'https://hooks.example.com/y', ?)",
+        alreadySealed,
+        sealedBefore);
+    assertThat(migration.run()).as("the second run converts nothing").isZero();
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT secret FROM studio_webhook_endpoint WHERE id = ?",
+                String.class,
+                alreadySealed))
+        .as("a sealed row is left untouched")
+        .isEqualTo(sealedBefore);
   }
 }

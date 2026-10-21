@@ -3,6 +3,7 @@ package com.krizaka.orazaka.studioservice.infrastructure.adapter.persistence;
 import com.krizaka.orazaka.studioservice.domain.model.WebhookDeliveryView;
 import com.krizaka.orazaka.studioservice.domain.model.WebhookEndpoint;
 import com.krizaka.orazaka.studioservice.domain.port.WebhookEndpointRepository;
+import com.krizaka.orazaka.studioservice.domain.port.WebhookSecretSealer;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
@@ -20,9 +21,11 @@ import org.springframework.stereotype.Component;
 class JdbcWebhookEndpointRepositoryAdapter implements WebhookEndpointRepository {
 
   private final JdbcTemplate jdbcTemplate;
+  private final WebhookSecretSealer sealer;
 
-  JdbcWebhookEndpointRepositoryAdapter(JdbcTemplate jdbcTemplate) {
+  JdbcWebhookEndpointRepositoryAdapter(JdbcTemplate jdbcTemplate, WebhookSecretSealer sealer) {
     this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "JdbcTemplate cannot be null");
+    this.sealer = Objects.requireNonNull(sealer, "WebhookSecretSealer cannot be null");
   }
 
   @Override
@@ -37,13 +40,16 @@ class JdbcWebhookEndpointRepositoryAdapter implements WebhookEndpointRepository 
 
   @Override
   public WebhookEndpoint create(String actorId, String url, List<String> events, String secret) {
+    // The id is chosen here: the sealed secret is bound to it (and stored only sealed).
+    UUID id = UUID.randomUUID();
     return jdbcTemplate.queryForObject(
-        "INSERT INTO studio_webhook_endpoint (actor_id, url, secret, events)"
-            + " VALUES (?, ?, ?, ?) RETURNING id, url, events, enabled, created_at",
+        "INSERT INTO studio_webhook_endpoint (id, actor_id, url, secret, events)"
+            + " VALUES (?, ?, ?, ?, ?) RETURNING id, url, events, enabled, created_at",
         (rs, rowNum) -> endpoint(rs),
+        id,
         actorId,
         url,
-        secret,
+        sealer.seal(id, secret),
         String.join(",", events));
   }
 
@@ -83,7 +89,7 @@ class JdbcWebhookEndpointRepositoryAdapter implements WebhookEndpointRepository 
                 + " previous_secret_until = now() + make_interval(secs => ?), secret = ?"
                 + " WHERE actor_id = ? AND id = ?",
             grace.toSeconds(),
-            secret,
+            sealer.seal(id, secret),
             actorId,
             id)
         > 0;

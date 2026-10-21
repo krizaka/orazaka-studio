@@ -106,6 +106,9 @@ orazaka:
       # routing key here would be the second copy this whole change removed.
       base-url: ${JOB_SERVICE_INTERNAL_URL:http://localhost:8090}
       cache-ttl: ${STUDIO_JOB_PLANE_CACHE_TTL:60s}
+    conversation-plane:
+      # Where the memory of a person's voice and listening turns is erased on request (orazaka#301).
+      base-url: ${CONVERSATION_SERVICE_INTERNAL_URL:http://localhost:8080}
 
 # ── Krizaka platform kit ──────────────────────────────────────────────────────
 krizaka:

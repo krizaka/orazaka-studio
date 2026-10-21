@@ -20,6 +20,7 @@ import com.krizaka.orazaka.studioservice.domain.exception.PackNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.model.BlueprintVersion;
 import com.krizaka.orazaka.studioservice.domain.model.ConsentNotice;
 import com.krizaka.orazaka.studioservice.domain.model.ErasureReceipt;
+import com.krizaka.orazaka.studioservice.domain.port.ConversationErasureClient;
 import com.krizaka.orazaka.studioservice.domain.port.JobErasureClient;
 import com.krizaka.orazaka.studioservice.infrastructure.support.ColumnValueResolver;
 import com.krizaka.orazaka.test.architecture.SqlBoundaryRules;
@@ -81,6 +82,7 @@ class ProtectedDataServiceIT {
   private static JdbcTemplate jdbc;
 
   private final FakeJobPlane jobPlane = new FakeJobPlane();
+  private final FakeConversationPlane conversationPlane = new FakeConversationPlane();
   private final StudioRuntimeConfigService config = mock(StudioRuntimeConfigService.class);
   private final StudioRunService runService = mock(StudioRunService.class);
   private ProtectedDataService service;
@@ -170,7 +172,8 @@ class ProtectedDataServiceIT {
             config,
             runService,
             new RunAuditService(jdbc),
-            jobPlane);
+            jobPlane,
+            conversationPlane);
   }
 
   private static UUID installation(String actor, String studio) {
@@ -264,7 +267,7 @@ class ProtectedDataServiceIT {
 
     ErasureReceipt receipt = service.eraseAll(ERIC, "bien-etre");
 
-    assertThat(receipt).isEqualTo(new ErasureReceipt("bien-etre", 3, 2, 3));
+    assertThat(receipt).isEqualTo(new ErasureReceipt("bien-etre", 3, 2, 3, 2));
     assertThat(tablesMentioning(WORDS)).as("the words, in any table of the schema").isZero();
     assertThat(count("SELECT count(*) FROM studio_run WHERE actor_id = ?", ERIC)).isZero();
     assertThat(
@@ -288,6 +291,9 @@ class ProtectedDataServiceIT {
         .as("the job plane was asked to erase exactly the jobs of Eric's runs")
         .containsExactlyInAnyOrder(first.toString(), second.toString(), active.toString());
     assertThat(jobPlane.actors).containsOnly(ERIC);
+    assertThat(conversationPlane.asked)
+        .as("the conversation service was asked to erase Eric's voice and listening memory")
+        .containsExactly(ERIC + "/bien-etre");
     verify(runService).cancel(active, ERIC);
     verify(runService, never()).cancel(eq(first), anyString());
 
@@ -332,7 +338,7 @@ class ProtectedDataServiceIT {
 
     ErasureReceipt again = service.eraseAll(ERIC, "bien-etre");
 
-    assertThat(again).isEqualTo(new ErasureReceipt("bien-etre", 0, 0, 0));
+    assertThat(again).isEqualTo(new ErasureReceipt("bien-etre", 0, 0, 0, 0));
     assertThat(auditRows(ERIC, "DATA_ERASED")).isEqualTo(trail);
   }
 
@@ -352,6 +358,26 @@ class ProtectedDataServiceIT {
     assertThat(auditRows(ERIC, "DATA_ERASED")).isEqualTo(trail);
 
     jobPlane.failing = false;
+    assertThat(service.eraseAll(ERIC, "bien-etre").entries()).isOne();
+  }
+
+  @Test
+  @DisplayName("if the conversation service cannot erase its part, nothing is deleted either")
+  void aFailingConversationPlaneDeletesNothing() {
+    UUID install = installation(ERIC, "guided-journaling");
+    run(ERIC, "guided-journaling", install, WORDS, true);
+    int trail = auditRows(ERIC, "DATA_ERASED");
+    conversationPlane.failing = true;
+
+    assertThatThrownBy(() -> service.eraseAll(ERIC, "bien-etre"))
+        .isInstanceOf(ErasureIncompleteException.class);
+
+    assertThat(count("SELECT count(*) FROM studio_run WHERE actor_id = ?", ERIC)).isOne();
+    assertThat(count("SELECT count(*) FROM studio_installation WHERE actor_id = ?", ERIC)).isOne();
+    assertThat(auditRows(ERIC, "DATA_ERASED")).isEqualTo(trail);
+    assertThat(jobPlane.erased).as("the job plane was not asked either").isEmpty();
+
+    conversationPlane.failing = false;
     assertThat(service.eraseAll(ERIC, "bien-etre").entries()).isOne();
   }
 
@@ -476,6 +502,25 @@ class ProtectedDataServiceIT {
       actors.add(actorId);
       erased.addAll(jobIds);
       return jobIds.size();
+    }
+  }
+
+  /** The conversation service, as the Studio service sees it: records what it was asked. */
+  private static final class FakeConversationPlane implements ConversationErasureClient {
+    final List<String> asked = new ArrayList<>();
+    boolean failing;
+    private boolean erased;
+
+    @Override
+    public int erase(String actorId, String packKey) {
+      if (failing) {
+        throw new ErasureIncompleteException("the conversation service is down", null);
+      }
+      asked.add(actorId + "/" + packKey);
+      // Idempotent like the real one: the second time there is nothing left.
+      int conversations = erased ? 0 : 2;
+      erased = true;
+      return conversations;
     }
   }
 }

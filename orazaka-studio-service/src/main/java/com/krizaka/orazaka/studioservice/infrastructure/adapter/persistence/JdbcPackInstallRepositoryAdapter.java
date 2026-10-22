@@ -235,7 +235,7 @@ class JdbcPackInstallRepositoryAdapter implements PackInstallRepository {
         return false;
       }
     }
-    return consentIsCurrent(bundle);
+    return consentIsCurrent(bundle) && safetyIsCurrent(bundle);
   }
 
   /**
@@ -259,6 +259,30 @@ class JdbcPackInstallRepositoryAdapter implements PackInstallRepository {
                 bundle.consent().version().equals(rs.getString(1))
                     && bundle.consent().statement().equals(rs.getString(2))
                     && bundle.consent().statements().equals(columns.stringMap(rs.getString(3))),
+            bundle.key())
+        .stream()
+        .findFirst()
+        .orElse(false);
+  }
+
+  /**
+   * Whether the pack row already carries the bundle's safety declaration — the crisis terms, the
+   * reply, the lines and the system prompt.
+   *
+   * <p>The same defect as the consent statement's (orazaka#301): a prompt is not a blueprint, so a
+   * bundle whose only change is the words of its system prompt changed no Studio version, was
+   * judged applied, and never reached an environment that already had the pack (the neighbour
+   * persona of the wellbeing pack, krizaka/yororis#99). JSON is compared as data, not as text.
+   */
+  private boolean safetyIsCurrent(PackBundle bundle) {
+    if (!bundle.isCatalogued()) {
+      return true;
+    }
+    return jdbcTemplate
+        .query(
+            "SELECT safety::text FROM pack WHERE pack_key = ?",
+            (rs, rowNum) ->
+                columns.objectMap(safetyJson(bundle)).equals(columns.objectMap(rs.getString(1))),
             bundle.key())
         .stream()
         .findFirst()

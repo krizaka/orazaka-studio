@@ -98,6 +98,10 @@ class PackConsentAppliedIT {
   }
 
   private static PackBundle bundle(PackConsent consent) {
+    return bundle(consent, null);
+  }
+
+  private static PackBundle bundle(PackConsent consent, String systemPrompt) {
     CrisisResource line =
         new CrisisResource(
             "FR", "3114", "3114", "24h/24", "https://3114.fr/", LocalDate.parse("2026-10-20"));
@@ -135,7 +139,8 @@ class PackConsentAppliedIT {
         Map.of(),
         new PackScopeGuard(List.of("posologie"), "Je ne parle pas de posologie."),
         consent,
-        new PackSafety(List.of("en finir"), "Je m'arrête là.", "review", Map.of("FR", line), null));
+        new PackSafety(
+            List.of("en finir"), "Je m'arrête là.", "review", Map.of("FR", line), systemPrompt));
   }
 
   @Test
@@ -163,5 +168,30 @@ class PackConsentAppliedIT {
                 String.class))
         .isEqualTo("This Studio records.");
     assertThat(DataClass.REGULATED.isProtected()).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "a changed system prompt makes the bundle un-applied again, so it reaches the environment")
+  void aChangedSystemPromptIsNotApplied() {
+    PackConsent consent = new PackConsent("3.0", "Ce Studio enregistre.");
+    PackBundle before = bundle(consent, "Tu es une présence IA.");
+    PackBundle after = bundle(consent, "Tu es « le voisin ».");
+
+    repository.apply(before);
+    assertThat(repository.isApplied(before)).isTrue();
+
+    assertThat(repository.isApplied(after))
+        .as("same Studios, same consent, a new prompt: not applied until it is written")
+        .isFalse();
+    repository.apply(after);
+
+    assertThat(repository.isApplied(after)).isTrue();
+    assertThat(repository.isApplied(before)).as("and the old prompt no longer is").isFalse();
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT safety->>'systemPrompt' FROM pack WHERE pack_key = 'bien-etre'",
+                String.class))
+        .isEqualTo("Tu es « le voisin ».");
   }
 }

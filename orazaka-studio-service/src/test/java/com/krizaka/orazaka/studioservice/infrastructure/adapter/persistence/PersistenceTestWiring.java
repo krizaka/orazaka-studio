@@ -3,6 +3,7 @@ package com.krizaka.orazaka.studioservice.infrastructure.adapter.persistence;
 import com.krizaka.orazaka.studioservice.domain.port.BlueprintRepository;
 import com.krizaka.orazaka.studioservice.domain.port.PackInstallRepository;
 import com.krizaka.orazaka.studioservice.domain.port.PackRepository;
+import com.krizaka.orazaka.studioservice.domain.port.RunResultCache;
 import com.krizaka.orazaka.studioservice.infrastructure.support.ColumnValueResolver;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -56,5 +57,16 @@ public class PersistenceTestWiring {
   public PackInstallRepository packInstallRepository(
       JdbcTemplate jdbcTemplate, ColumnValueResolver columns) {
     return new JdbcPackInstallRepositoryAdapter(jdbcTemplate, columns);
+  }
+
+  /**
+   * The real exact result cache, so an integration test answers a repeated run from the database.
+   *
+   * @param jdbcTemplate the studio datasource
+   * @return the adapter behind its port
+   */
+  @Bean
+  public RunResultCache runResultCache(JdbcTemplate jdbcTemplate) {
+    return new JdbcRunResultCacheAdapter(jdbcTemplate);
   }
 }

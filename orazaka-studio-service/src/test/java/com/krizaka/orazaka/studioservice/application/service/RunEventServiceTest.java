@@ -111,6 +111,7 @@ class RunEventServiceTest {
         null,
         Instant.EPOCH,
         null,
+        null,
         null);
   }
 
@@ -296,7 +297,18 @@ class RunEventServiceTest {
 
   private RunDetail runOf(UUID id, RunStatus status) {
     return new RunDetail(
-        id, null, "compliance-check", "1.0.0", status, null, null, null, Instant.EPOCH, null, null);
+        id,
+        null,
+        "compliance-check",
+        "1.0.0",
+        status,
+        null,
+        null,
+        null,
+        Instant.EPOCH,
+        null,
+        null,
+        null);
   }
 
   /** The actor's history reads as these lists in turn, the last one for ever. */

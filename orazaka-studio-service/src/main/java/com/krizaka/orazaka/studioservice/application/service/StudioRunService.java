@@ -18,10 +18,12 @@ import com.krizaka.orazaka.studioservice.domain.exception.StudioNotInstalledExce
 import com.krizaka.orazaka.studioservice.domain.exception.TooManyConcurrentRunsException;
 import com.krizaka.orazaka.studioservice.domain.model.ContentDecision;
 import com.krizaka.orazaka.studioservice.domain.model.InstalledStudio;
+import com.krizaka.orazaka.studioservice.domain.model.RequestFingerprint;
 import com.krizaka.orazaka.studioservice.domain.model.RunArtefact;
 import com.krizaka.orazaka.studioservice.domain.model.RunDetail;
 import com.krizaka.orazaka.studioservice.domain.model.RunStepView;
 import com.krizaka.orazaka.studioservice.domain.port.BlueprintRepository;
+import com.krizaka.orazaka.studioservice.domain.port.RunResultCache;
 import com.krizaka.orazaka.studioservice.infrastructure.support.ColumnValueResolver;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -51,8 +53,11 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 public class StudioRunService {
 
+  /** The Studios whose identical runs answer from the recorded result (orazaka-studio#61). */
+  static final String RESULT_CACHE_STUDIOS_KEY = "run.result-cache.studios";
+
   private static final String SELECT_RUN =
-      "SELECT id, installation_id, actor_id, studio_key, blueprint_version, status, hold_id,"
+      "SELECT id, installation_id, actor_id, studio_key, blueprint_version, status, hold_id, cached_from,"
           + " correlation_id, inputs, outputs, error_message, started_at, finished_at"
           + " FROM studio_run";
 
@@ -71,6 +76,7 @@ public class StudioRunService {
   private final StudioAccessService accessService;
   private final ContentPolicyService contentPolicy;
   private final FormSchemaService formSchema;
+  private final RunResultCache resultCache;
 
   public StudioRunService(
       JdbcTemplate jdbcTemplate,
@@ -87,7 +93,8 @@ public class StudioRunService {
       StudioCatalogService catalogService,
       StudioAccessService accessService,
       ContentPolicyService contentPolicy,
-      FormSchemaService formSchema) {
+      FormSchemaService formSchema,
+      RunResultCache resultCache) {
     this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "JdbcTemplate cannot be null");
     this.installationService = Objects.requireNonNull(installationService, "installations");
     this.blueprintRepository = Objects.requireNonNull(blueprintRepository, "blueprints");
@@ -104,6 +111,7 @@ public class StudioRunService {
     this.accessService = Objects.requireNonNull(accessService, "StudioAccessService required");
     this.contentPolicy = Objects.requireNonNull(contentPolicy, "ContentPolicyService required");
     this.formSchema = Objects.requireNonNull(formSchema, "FormSchemaService required");
+    this.resultCache = Objects.requireNonNull(resultCache, "RunResultCache required");
   }
 
   /**
@@ -128,7 +136,12 @@ public class StudioRunService {
           "installation is " + installation.status() + " and cannot run");
     }
     return launch(
-        installationId, installation.studioKey(), installation.pinnedVersion(), actorId, inputs);
+        installationId,
+        installation.studioKey(),
+        installation.pinnedVersion(),
+        installation.config(),
+        actorId,
+        inputs);
   }
 
   /**
@@ -175,7 +188,7 @@ public class StudioRunService {
                       new IllegalStateException(
                           "studio has no published version to run: " + studioKey))
               .version();
-      return launch(null, studioKey, resolved, actorId, inputs);
+      return launch(null, studioKey, resolved, Map.of(), actorId, inputs);
     }
 
     Optional<InstalledStudio> installation = installationService.findForStudio(studioKey, actorId);
@@ -199,6 +212,8 @@ public class StudioRunService {
    * @param studioKey the Studio
    * @param version the blueprint version this run executes, decided before this call and never
    *     after
+   * @param config the installation's configuration ({@code {}} for a TOOLKIT): part of what makes
+   *     two requests the same
    * @param actorId the opaque billable subject
    * @param inputs the actor's answers
    * @return the accepted run
@@ -207,6 +222,7 @@ public class StudioRunService {
       UUID installationId,
       String studioKey,
       String version,
+      Map<String, String> config,
       String actorId,
       Map<String, Object> inputs) {
     enforceConcurrencyCap(actorId);
@@ -221,6 +237,15 @@ public class StudioRunService {
     // Before the hold, the row and any provider: a refused prompt costs nothing and reaches
     // nothing.
     contentPolicy.enforce(actorId, studioKey, validated, providersOf(blueprint));
+    String fingerprint =
+        RequestFingerprint.of(
+            "studio:" + studioKey + "@" + version, Map.of("inputs", validated, "config", config));
+    if (runtimeConfigService.listValue(RESULT_CACHE_STUDIOS_KEY).contains(studioKey)) {
+      Optional<UUID> recorded = resultCache.findSucceeded(actorId, studioKey, version, fingerprint);
+      if (recorded.isPresent()) {
+        return answerFromCache(recorded.get(), installationId, studioKey, version, actorId);
+      }
+    }
     String correlationId = UUID.randomUUID().toString();
     String holdId =
         creditReservationService.hold(actorId, correlationId, blueprint.estimatedCredits());
@@ -233,8 +258,8 @@ public class StudioRunService {
     DataClass dataClass = dataClassOf(studioKey);
     jdbcTemplate.update(
         "INSERT INTO studio_run (id, installation_id, actor_id, studio_key, blueprint_version,"
-            + " status, hold_id, correlation_id, inputs, data_class)"
-            + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?)",
+            + " status, hold_id, correlation_id, inputs, data_class, input_fingerprint)"
+            + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?)",
         runId,
         installationId,
         actorId,
@@ -244,7 +269,8 @@ public class StudioRunService {
         holdId,
         correlationId,
         columns.json(validated),
-        dataClass.name());
+        dataClass.name(),
+        fingerprint);
     runAuditService.recordStarted(runId, actorId, studioKey, dataClass);
 
     if (installationId != null) {
@@ -265,6 +291,47 @@ public class StudioRunService {
             correlationId));
 
     runSagaService.advance(runId);
+    return find(runId, actorId).orElseThrow(() -> new RunNotFoundException(runId));
+  }
+
+  /**
+   * Answers a run with the result an identical one already computed (orazaka-studio#61).
+   *
+   * <p>Exact only: the same actor, the same Studio version, the same inputs and configuration, by
+   * fingerprint — never a « similar » document. The new run is born SUCCEEDED with the original's
+   * outputs and names it in {@code cached_from}; it holds no credits, dispatches nothing and calls
+   * no model. Enabled per Studio by the operator ({@value #RESULT_CACHE_STUDIOS_KEY}), because only
+   * a deterministic Studio may answer twice with one result.
+   */
+  private RunDetail answerFromCache(
+      UUID original, UUID installationId, String studioKey, String version, String actorId) {
+    UUID runId = UUID.randomUUID();
+    DataClass dataClass = dataClassOf(studioKey);
+    jdbcTemplate.update(
+        "INSERT INTO studio_run (id, installation_id, actor_id, studio_key, blueprint_version,"
+            + " status, correlation_id, inputs, outputs, data_class, input_fingerprint, cached_from,"
+            + " finished_at)"
+            + " SELECT ?, ?, actor_id, studio_key, blueprint_version, ?, ?, inputs, outputs, ?,"
+            + " input_fingerprint, id, now() FROM studio_run WHERE id = ?",
+        runId,
+        installationId,
+        RunStatus.SUCCEEDED.name(),
+        UUID.randomUUID().toString(),
+        dataClass.name(),
+        original);
+    runAuditService.recordStarted(runId, actorId, studioKey, dataClass);
+    Map<String, Object> event =
+        Map.of(
+            "runId",
+            runId.toString(),
+            "actorId",
+            actorId,
+            "studioKey",
+            studioKey,
+            "cachedFrom",
+            original.toString());
+    outboxService.append(runId.toString(), "evt.studio.run.started", event);
+    outboxService.append(runId.toString(), "evt.studio.run.succeeded", event);
     return find(runId, actorId).orElseThrow(() -> new RunNotFoundException(runId));
   }
 
@@ -613,7 +680,8 @@ public class StudioRunService {
             rs.getString("error_message"),
             columns.instantAt(rs, "started_at"),
             columns.instantAt(rs, "finished_at"),
-            List.of());
+            List.of(),
+            rs.getObject("cached_from", UUID.class));
     return new RawRun(run, values);
   }
 }

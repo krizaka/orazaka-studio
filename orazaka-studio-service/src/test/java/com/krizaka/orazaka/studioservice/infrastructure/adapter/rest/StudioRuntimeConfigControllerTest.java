@@ -18,6 +18,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.RequestMapping;
 import tools.jackson.databind.node.JsonNodeFactory;
 
 /**
@@ -55,6 +56,17 @@ class StudioRuntimeConfigControllerTest {
       assertThat(guard).as(handler.getName()).isNotNull();
       assertThat(guard.value()).as(handler.getName()).isEqualTo("hasRole('ADMIN')");
     }
+  }
+
+  @Test
+  @DisplayName(
+      "the API lives under /api/v1/studios, the only prefix the edge sends to this service")
+  void theApiIsReachableThroughTheEdge() {
+    // orazaka-edge routes /api/v1/studios/** here and /api/v1/admin/** elsewhere: a path under
+    // /api/v1/admin/studios answered 404 from the console. Same place as the operator audit.
+    String path =
+        StudioRuntimeConfigController.class.getAnnotation(RequestMapping.class).value()[0];
+    assertThat(path).isEqualTo("/api/v1/studios/admin/runtime-config");
   }
 
   @Test

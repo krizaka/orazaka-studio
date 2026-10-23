@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /** Operator access to live Studio runtime settings. */
 @RestController
-@RequestMapping("/api/v1/admin/studios/runtime-config")
+@RequestMapping("/api/v1/studios/admin/runtime-config")
 class StudioRuntimeConfigController {
 
   private final StudioRuntimeConfigService runtimeConfig;

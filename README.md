@@ -34,7 +34,7 @@ part of the [Orazaka platform](https://github.com/krizaka/orazaka) by [Krizaka](
 | Studios & blueprints (semver'd DAGs) | `/api/v1/studios` · `/api/v1/studios/{key}/blueprints` |
 | Installations | `/api/v1/studios/{key}/installations` |
 | Runs (saga, approvals, cancel) | `/api/v1/studios/runs` |
-| Admin runtime settings | `GET /api/v1/admin/studios/runtime-config` · `PUT /api/v1/admin/studios/runtime-config/{key}` |
+| Admin runtime settings | `GET /api/v1/studios/admin/runtime-config` · `PUT /api/v1/studios/admin/runtime-config/{key}` |
 
 | Module | Role |
 |:---|:---|
@@ -89,7 +89,7 @@ value matching its type: integer settings take a JSON number, booleans take `tru
 settings take an array of strings. For example:
 
 ```http
-PUT /api/v1/admin/studios/runtime-config/run.fan-out-max
+PUT /api/v1/studios/admin/runtime-config/run.fan-out-max
 Content-Type: application/json
 
 {"value": 12}

@@ -772,10 +772,6 @@ public class RunSagaService {
     return items.size() > effective ? items.subList(0, effective) : items;
   }
 
-  private RunScope buildScope(RunRow run, Blueprint blueprint) {
-    return buildScope(run, blueprint, installationConfig(run.installationId()));
-  }
-
   private RunScope buildScope(
       RunRow run, Blueprint blueprint, Map<String, String> installationConfig) {
     Map<String, Object> outputs = new LinkedHashMap<>();
@@ -836,10 +832,6 @@ public class RunSagaService {
    * <p>The actor always wins — their configuration is the whole point of an installation; the
    * blueprint only supplies what they did not answer.
    */
-  private Map<String, String> effectiveConfig(RunRow run, Blueprint blueprint) {
-    return effectiveConfig(run, blueprint, installationConfig(run.installationId()));
-  }
-
   private Map<String, String> effectiveConfig(
       RunRow run, Blueprint blueprint, Map<String, String> installationConfig) {
     Map<String, String> effective = new LinkedHashMap<>(blueprint.configSchemaDefaults());

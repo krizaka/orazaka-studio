@@ -752,13 +752,21 @@ class StudioRunLifecycleIT {
 
     // The second photo's description comes back first: the step after must still read them in
     // the order of the photos, because the ordinal, not the arrival, is the order.
-    sagaService.applyOutcome(fanOut.getLast(), Map.of("content", "Salle de bain"), null);
-    sagaService.applyOutcome(fanOut.getFirst(), Map.of("content", "Cuisine refaite"), null);
+    sagaService.applyOutcome(fanOut.getLast(), description("Salle de bain"), null);
+    sagaService.applyOutcome(fanOut.getFirst(), description("Cuisine refaite"), null);
 
     assertTrue(
         String.valueOf(executor.lastInputs.get("prompt"))
             .contains("Cuisine refaite\nSalle de bain"),
         () -> "the descriptions in item order, got: " + executor.lastInputs);
+  }
+
+  /**
+   * A vision result: its text under `analysis` (what the executor returns), and `content` for
+   * blueprints that read it.
+   */
+  private static Map<String, Object> description(String text) {
+    return Map.of("analysis", text, "content", text);
   }
 
   @Test

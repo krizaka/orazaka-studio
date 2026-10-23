@@ -1,5 +1,6 @@
 package com.krizaka.orazaka.studio.domain.model;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -23,7 +24,8 @@ import java.util.regex.Pattern;
  *   <li>{@code {{config.x}}} and bare {@code {{config}}} — the installation's configuration
  *   <li>{@code {{secrets.x}}} — a connector credential; readable here, never rendered into a log,
  *       an event payload or a run-detail response
- *   <li>{@code {{steps.out}}} and {@code {{steps.out.field}}} — an upstream step's output
+ *   <li>{@code {{steps.out}}} and {@code {{steps.out.field}}} — an upstream step's output; over a
+ *       fan-out, {@code out.field} is that field of every item's result, in order
  *   <li>a {@code {{ref:default}}} fallback on any of the above — the same {@code ${key:default}}
  *       grammar {@code orazaka_capabilities.payload_template} already defines, so the platform has
  *       one templating grammar rather than two
@@ -319,14 +321,39 @@ public record RunScope(
     };
   }
 
-  /** {@code out} yields the whole output; {@code out.field} reaches inside a structured one. */
+  /**
+   * {@code out} yields the whole output; {@code out.field} reaches inside a structured one.
+   *
+   * <p>Over a fan-out — a list of results — {@code out.field} is that field of every result, in the
+   * order of the items, leaving out the results that do not carry it (an item that failed and was
+   * skipped has no result at all). It is the same form read over each element, not a new one:
+   * {@code {{steps.briefs.content}}} gives the briefs' texts, one per line in a prompt and a list
+   * for a step input, where {@code {{steps.briefs}}} gave every result's whole envelope
+   * (orazaka-studio#60, orazaka-packs#5). None carrying it reads as absent, so a default applies.
+   */
   private Object step(String path) {
     int dot = path.indexOf('.');
     Object output = steps.get(dot < 0 ? path : path.substring(0, dot));
-    if (dot < 0 || !(output instanceof Map<?, ?> fields)) {
-      return dot < 0 ? output : null;
+    if (dot < 0) {
+      return output;
     }
-    return fields.get(path.substring(dot + 1));
+    String field = path.substring(dot + 1);
+    return switch (output) {
+      case Map<?, ?> fields -> fields.get(field);
+      case List<?> results -> project(results, field);
+      case null, default -> null;
+    };
+  }
+
+  /** The {@code field} of each result that carries one, in order; null when none does. */
+  private static List<Object> project(List<?> results, String field) {
+    List<Object> values = new ArrayList<>();
+    for (Object result : results) {
+      if (result instanceof Map<?, ?> fields && fields.get(field) != null) {
+        values.add(fields.get(field));
+      }
+    }
+    return values.isEmpty() ? null : List.copyOf(values);
   }
 
   /**

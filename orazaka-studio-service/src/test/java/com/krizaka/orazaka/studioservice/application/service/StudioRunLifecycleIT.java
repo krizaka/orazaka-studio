@@ -745,6 +745,23 @@ class StudioRunLifecycleIT {
   // ── Retry and config defaults: behaviour the blueprint declares ───────────
 
   @Test
+  @DisplayName("[studio#60] a fan-out's results reach the next step in the order of its items")
+  void fanOutResultsKeepTheOrderOfTheirItems() {
+    startRun();
+    List<String> fanOut = List.copyOf(executor.dispatched);
+
+    // The second photo's description comes back first: the step after must still read them in
+    // the order of the photos, because the ordinal, not the arrival, is the order.
+    sagaService.applyOutcome(fanOut.getLast(), Map.of("content", "Salle de bain"), null);
+    sagaService.applyOutcome(fanOut.getFirst(), Map.of("content", "Cuisine refaite"), null);
+
+    assertTrue(
+        String.valueOf(executor.lastInputs.get("prompt"))
+            .contains("Cuisine refaite\nSalle de bain"),
+        () -> "the descriptions in item order, got: " + executor.lastInputs);
+  }
+
+  @Test
   @DisplayName("A RETRY step is re-submitted rather than failing the run on its first stumble")
   void retryStepIsResubmitted() {
     RunDetail run = startRun();

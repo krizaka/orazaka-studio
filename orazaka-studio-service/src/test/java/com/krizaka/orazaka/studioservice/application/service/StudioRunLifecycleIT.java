@@ -43,6 +43,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -270,6 +271,193 @@ class StudioRunLifecycleIT {
         RunStatus.SUCCEEDED,
         runService.find(run.id(), ACTOR).orElseThrow().status(),
         "the run ends instead of holding a run slot for ever");
+  }
+
+  // ── orazaka-studio#62: a step calls a published Studio (studio.call) ─────────────
+
+  /**
+   * Publishes a Studio whose first step calls {@code trade-showcase} and whose second reshapes the
+   * called run's caption. {@code onError} is the parent step's policy for the call.
+   */
+  private UUID installCaller(String studioKey, String onError) {
+    return installCaller(
+        studioKey, onError, "{\"photos\": \"{{inputs.photos}}\", \"trade\": \"{{inputs.trade}}\"}");
+  }
+
+  /** The same caller, sending the called Studio these inputs. */
+  private UUID installCaller(String studioKey, String onError, String callInputs) {
+    String definition =
+        """
+        {"studioKey": "%s", "version": "1.0.0",
+         "steps": [
+           {"id": "vitrine", "kind": "STUDIO", "studioKey": "trade-showcase",
+            "inputs": %s,
+            "out": "vitrine", "onError": "%s", "maxAttempts": 1, "timeout": "PT30M"},
+           {"id": "post", "kind": "TRANSFORM", "dependsOn": ["vitrine"],
+            "inputs": {"caption": "{{steps.vitrine.caption:}}"}, "out": "post",
+            "onError": "FAIL", "maxAttempts": 1, "timeout": "PT1M"}
+         ],
+         "outputs": [{"key": "caption", "label": "Caption", "from": "{{steps.post.caption}}",
+                      "type": "TEXT"}]}
+        """
+            .formatted(studioKey, callInputs, onError);
+    jdbcTemplate.update(
+        "INSERT INTO studio (studio_key, label, tagline, profession, icon_key, pricing,"
+            + " entitlement_key, status, publisher_id, latest_version, sort_weight)"
+            + " VALUES (?, 'Caller', 'Calls a Studio', 'trades', 'studio', 'FREE', ?, 'PUBLISHED',"
+            + " 'orazaka', '1.0.0', 200) ON CONFLICT (studio_key) DO NOTHING",
+        studioKey,
+        "studio." + studioKey);
+    jdbcTemplate.update(
+        "INSERT INTO studio_blueprint (studio_key, version, status, definition, input_schema,"
+            + " config_schema, estimated_credits, changelog, published_at, created_by)"
+            + " VALUES (?, '1.0.0', 'PUBLISHED', ?::jsonb,"
+            + " '{\"type\":\"object\",\"required\":[\"photos\",\"trade\"]}'::jsonb,"
+            + " '{}'::jsonb, 50, 'test', now(), 'system')"
+            + " ON CONFLICT (studio_key, version) DO NOTHING",
+        studioKey,
+        definition);
+    return installationService.install(studioKey, ACTOR, Map.of(), "fr").id();
+  }
+
+  private UUID childOf(UUID parent) {
+    return jdbcTemplate.queryForObject(
+        "SELECT id FROM studio_run WHERE parent_run_id = ?", UUID.class, parent);
+  }
+
+  @Test
+  @DisplayName(
+      "[studio#62] a STUDIO step starts a child run, takes its outputs, and settles it in one hold")
+  void aStepCallsAStudio() {
+    install(); // the called Studio, with its configuration
+    UUID caller = installCaller("showcase-call", "FAIL");
+    int holdsBefore = credits.holds;
+    RunDetail run =
+        runService.start(caller, ACTOR, Map.of("photos", List.of("p1"), "trade", "plombier"));
+
+    UUID child = childOf(run.id());
+    assertEquals(
+        child.toString(),
+        jdbcTemplate.queryForObject(
+            "SELECT job_id FROM studio_run_step WHERE run_id = ? AND step_id = 'vitrine'",
+            String.class,
+            run.id()),
+        "the parent step waits on the child's run id");
+    assertNull(
+        jdbcTemplate.queryForObject(
+            "SELECT hold_id FROM studio_run WHERE id = ?", String.class, child),
+        "a called run holds nothing of its own");
+    assertEquals(1, credits.holds - holdsBefore, "one request, one hold");
+    assertEquals(
+        List.of(run.id()),
+        runService.history(ACTOR, 10).stream().map(RunDetail::id).toList(),
+        "the history lists the request, not the runs it called");
+
+    List<String> describe = List.copyOf(executor.dispatched);
+    describe.forEach(
+        job ->
+            sagaService.applyOutcome(
+                job, Map.of("content", "ok"), Map.of("tokens", 100), "llava", null, null));
+    List.copyOf(executor.dispatched).stream()
+        .filter(job -> !describe.contains(job))
+        .forEach(
+            job ->
+                sagaService.applyOutcome(
+                    job,
+                    Map.of("content", "Une belle salle de bain", "url", "/media/img-1.png"),
+                    Map.of("tokens", 200),
+                    "llava",
+                    null,
+                    null));
+
+    assertEquals(RunStatus.SUCCEEDED, runService.find(child, ACTOR).orElseThrow().status());
+    RunDetail finished = runService.find(run.id(), ACTOR).orElseThrow();
+    assertEquals(RunStatus.SUCCEEDED, finished.status());
+    assertEquals(
+        "Une belle salle de bain",
+        finished.outputs().stream()
+            .filter(artefact -> "caption".equals(artefact.key()))
+            .findFirst()
+            .orElseThrow()
+            .value(),
+        "the called run's output reaches the parent's next step");
+    assertEquals(1, credits.aggregateSettlements.size(), "settled once, with the parent's hold");
+    assertEquals(
+        3,
+        credits.aggregateSettlements.getFirst().size(),
+        "the child's three measured steps are inside the parent's settlement");
+  }
+
+  @Test
+  @DisplayName("[studio#62] the child's failure is the parent step's: FAIL ends the request")
+  void aFailedCallFollowsTheParentPolicy() {
+    install();
+    UUID caller = installCaller("showcase-call-fail", "FAIL");
+    RunDetail run =
+        runService.start(caller, ACTOR, Map.of("photos", List.of("p1"), "trade", "plombier"));
+    UUID child = childOf(run.id());
+
+    // `describe` fails at the executor: the child fails (its own policy), then the parent step.
+    List.copyOf(executor.dispatched)
+        .forEach(job -> sagaService.applyOutcome(job, Map.of(), "model unavailable"));
+
+    assertEquals(RunStatus.FAILED, runService.find(child, ACTOR).orElseThrow().status());
+    assertEquals(RunStatus.FAILED, runService.find(run.id(), ACTOR).orElseThrow().status());
+    assertEquals(
+        List.of("hold-1"), credits.released, "the platform failed: the one hold goes back, once");
+  }
+
+  @Test
+  @DisplayName("[studio#62] SKIP on the call lets the request go on without the child's output")
+  void aSkippedCallLetsTheRequestGoOn() {
+    install();
+    UUID caller = installCaller("showcase-call-skip", "SKIP");
+    RunDetail run =
+        runService.start(caller, ACTOR, Map.of("photos", List.of("p1"), "trade", "plombier"));
+
+    List.copyOf(executor.dispatched)
+        .forEach(job -> sagaService.applyOutcome(job, Map.of(), "model unavailable"));
+
+    assertEquals(
+        RunStatus.FAILED, runService.find(childOf(run.id()), ACTOR).orElseThrow().status());
+    assertEquals(RunStatus.SUCCEEDED, runService.find(run.id(), ACTOR).orElseThrow().status());
+  }
+
+  @Test
+  @DisplayName("[studio#62] a call the target refuses (missing input) fails the step at once")
+  void aRefusedCallFailsTheStep() {
+    install();
+    // The call sends `trade` only: the called Studio requires `photos` and refuses to start.
+    UUID caller =
+        installCaller("showcase-call-refused", "FAIL", "{\"trade\": \"{{inputs.trade}}\"}");
+    RunDetail run =
+        runService.start(caller, ACTOR, Map.of("photos", List.of("p1"), "trade", "plombier"));
+
+    RunDetail failed = runService.find(run.id(), ACTOR).orElseThrow();
+    assertEquals(RunStatus.FAILED, failed.status());
+    assertEquals(
+        "INPUT_INVALID",
+        jdbcTemplate.queryForObject(
+            "SELECT failure_cause FROM studio_run_step WHERE run_id = ? AND step_id = 'vitrine'",
+            String.class,
+            run.id()));
+    assertTrue(executor.dispatched.isEmpty(), "nothing reached an executor");
+  }
+
+  @Test
+  @DisplayName("[studio#62] cancelling the request cancels the run it called")
+  void cancellingTheParentCancelsTheChild() {
+    install();
+    UUID caller = installCaller("showcase-call-cancel", "FAIL");
+    RunDetail run =
+        runService.start(caller, ACTOR, Map.of("photos", List.of("p1"), "trade", "plombier"));
+    UUID child = childOf(run.id());
+
+    runService.cancel(run.id(), ACTOR);
+
+    assertEquals(RunStatus.CANCELLED, runService.find(child, ACTOR).orElseThrow().status());
+    assertEquals(RunStatus.CANCELLED, runService.find(run.id(), ACTOR).orElseThrow().status());
+    assertEquals(1, executor.stopped.size(), "the child's in-flight job is told to stop");
   }
 
   // ── §15: install → run → step outcomes → settle ───────────────────────────
@@ -1289,7 +1477,8 @@ class StudioRunLifecycleIT {
         StudioRuntimeConfigService runtimeConfigService,
         OutboxService outboxService,
         ColumnValueResolver columns,
-        RunAuditService runAuditService) {
+        RunAuditService runAuditService,
+        ObjectProvider<StudioRunService> runs) {
       return new RunSagaService(
           jdbcTemplate,
           blueprintRepository,
@@ -1301,7 +1490,8 @@ class StudioRunLifecycleIT {
           outboxService,
           columns,
           new SimpleMeterRegistry(),
-          runAuditService);
+          runAuditService,
+          runs);
     }
 
     @Bean

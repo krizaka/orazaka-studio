@@ -31,5 +31,13 @@ public enum StepKind {
    * In-process, pure, declarative reshaping (pick / join / format). <b>No expression evaluation, no
    * scripting</b> — that is the point of having a kind rather than an expression language.
    */
-  TRANSFORM
+  TRANSFORM,
+
+  /**
+   * A call to another published Studio (orazaka-studio#62): the step starts a child run with its
+   * own run id, its credits inside the parent's hold, and its outcome becomes this step's. Requires
+   * a {@code studioKey}. One level only — a Studio that calls Studios cannot itself be called, so a
+   * composition can never recurse.
+   */
+  STUDIO
 }

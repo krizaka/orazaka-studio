@@ -15,6 +15,7 @@ import com.krizaka.orazaka.studio.domain.model.RunStatus;
 import com.krizaka.orazaka.studio.domain.model.RunStepStatus;
 import com.krizaka.orazaka.studio.domain.model.StepDispatch;
 import com.krizaka.orazaka.studio.domain.model.StepKind;
+import com.krizaka.orazaka.studioservice.domain.exception.ContentPolicyRefusedException;
 import com.krizaka.orazaka.studioservice.domain.port.BlueprintRepository;
 import com.krizaka.orazaka.studioservice.domain.port.StepExecutionClient;
 import com.krizaka.orazaka.studioservice.infrastructure.support.ColumnValueResolver;
@@ -29,6 +30,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -73,12 +75,23 @@ public class RunSagaService {
   private final RunAuditService runAuditService;
 
   /**
+   * Starts the runs a STUDIO step calls. A provider, not the service: the run service starts a run
+   * by advancing it here, so each needs the other and only a late lookup breaks the circle.
+   */
+  private final ObjectProvider<StudioRunService> runs;
+
+  /**
    * Tells the executor of a step to stop (a cancelled run).
    *
    * @param runId the run
    * @param jobId the step's job
    */
   public void stop(UUID runId, String jobId) {
+    if (childOf(runId, jobId)) {
+      // A STUDIO step's job is the run it called: stopping it is cancelling that run.
+      cancelChild(UUID.fromString(jobId));
+      return;
+    }
     stepExecutionClient.cancel(runId, jobId);
   }
 
@@ -93,7 +106,8 @@ public class RunSagaService {
       OutboxService outboxService,
       ColumnValueResolver columns,
       MeterRegistry meterRegistry,
-      RunAuditService runAuditService) {
+      RunAuditService runAuditService,
+      ObjectProvider<StudioRunService> runs) {
     this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "JdbcTemplate cannot be null");
     this.blueprintRepository = Objects.requireNonNull(blueprintRepository, "repository required");
     this.stepExecutionClient = Objects.requireNonNull(stepExecutionClient, "client required");
@@ -107,6 +121,7 @@ public class RunSagaService {
     this.columns = Objects.requireNonNull(columns, "ColumnValueResolver required");
     this.meterRegistry = Objects.requireNonNull(meterRegistry, "MeterRegistry required");
     this.runAuditService = Objects.requireNonNull(runAuditService, "RunAuditService required");
+    this.runs = Objects.requireNonNull(runs, "StudioRunService provider required");
   }
 
   /**
@@ -236,6 +251,9 @@ public class RunSagaService {
 
     RunScope scope =
         buildScope(run, blueprint).withItem(itemFor(step, run, blueprint, ref.ordinal()));
+    if (step.kind() == StepKind.STUDIO) {
+      return recalled(run, step, ref, scope);
+    }
     Map<String, Object> resolved = new LinkedHashMap<>();
     // resolveValue, not resolve: a lone placeholder over a list stays a list, so a
     // composition's `photos` reaches its executor as assets rather than as one
@@ -380,6 +398,10 @@ public class RunSagaService {
       advanceLater(run.id());
       return;
     }
+    if (step.kind() == StepKind.STUDIO) {
+      call(run, step, scope);
+      return;
+    }
     if (step.kind() != StepKind.CAPABILITY && step.kind() != StepKind.CONNECTOR) {
       // KNOWLEDGE has no executor on this platform yet. Skipping is honest and keeps the run
       // moving; failing would strand blueprints that use it for optional grounding.
@@ -457,6 +479,168 @@ public class RunSagaService {
           // the work was sent (ADR-067).
           laneOf(step));
     }
+  }
+
+  /**
+   * Executes a {@link StepKind#STUDIO} step: one child run per instance (orazaka-studio#62).
+   *
+   * <p>The step's row is written first, its job id the child's run id, and only then is the child
+   * started: a child that finishes inside its own first advance (a Studio of transforms) reports to
+   * a row that is already there. A child that cannot start — not entitled, an input it requires
+   * missing, a prompt the policy refuses — is this step's failure with that cause, and the step's
+   * own policy decides what it does to the run, exactly as for any executor's refusal.
+   */
+  private void call(RunRow run, BlueprintStep step, RunScope scope) {
+    List<Object> items = expand(step, scope);
+    if (step.forEach() != null && items.isEmpty()) {
+      logger.info("Step {} fans out over an empty list — skipping it", step.id());
+      recordSkipped(run.id(), step.id());
+      advanceLater(run.id());
+      return;
+    }
+    for (int ordinal = 0; ordinal < items.size(); ordinal++) {
+      RunScope itemScope = scope.withItem(items.get(ordinal));
+      UUID child = UUID.randomUUID();
+      int inserted =
+          jdbcTemplate.update(
+              "INSERT INTO studio_run_step (run_id, step_id, ordinal, job_id, status, attempts,"
+                  + " latency_class, started_at) VALUES (?, ?, ?, ?, ?, 1, ?, now())"
+                  + " ON CONFLICT (run_id, step_id, ordinal) DO NOTHING",
+              run.id(),
+              step.id(),
+              ordinal,
+              child.toString(),
+              RunStepStatus.RUNNING.name(),
+              CapabilityRoute.DEFAULT_LATENCY_CLASS);
+      if (inserted == 0) {
+        continue; // already called by a concurrent advance
+      }
+      startChild(run, step, itemScope, child);
+    }
+  }
+
+  /** Re-calls a failed STUDIO step under RETRY: a new child run, the same row. */
+  private boolean recalled(RunRow run, BlueprintStep step, StepRef ref, RunScope scope) {
+    UUID child = UUID.randomUUID();
+    jdbcTemplate.update(
+        "UPDATE studio_run_step SET status = ?, job_id = ?, attempts = attempts + 1,"
+            + " error_message = NULL, failure_cause = NULL, finished_at = NULL"
+            + " WHERE run_id = ? AND step_id = ? AND ordinal = ?",
+        RunStepStatus.RUNNING.name(),
+        child.toString(),
+        ref.runId(),
+        ref.stepId(),
+        ref.ordinal());
+    logger.info(
+        "Retrying step {}[{}] of run {} with a new call", step.id(), ref.ordinal(), run.id());
+    startChild(run, step, scope, child);
+    return true;
+  }
+
+  /**
+   * Starts the child, or fails the step with the reason it could not start. The failure goes
+   * through {@link #applyOutcome}, so a retry, a skip or the run's end follow the step's policy.
+   */
+  private void startChild(RunRow run, BlueprintStep step, RunScope scope, UUID child) {
+    Map<String, Object> resolved = new LinkedHashMap<>();
+    step.inputs().forEach((key, template) -> resolved.put(key, scope.resolveValue(template)));
+    try {
+      runs.getObject().startChild(child, run.id(), step.studioKey(), run.actorId(), resolved);
+    } catch (RuntimeException refused) {
+      logger.info("Run {} step {} could not call {}", run.id(), step.id(), step.studioKey());
+      applyOutcome(
+          child.toString(),
+          Map.of(),
+          Map.of(),
+          null,
+          "step '" + step.id() + "' could not call " + step.studioKey() + ": " + reasonOf(refused),
+          causeOf(refused));
+    }
+  }
+
+  /** What a refused call says, without its stack: the exception's message, or its kind. */
+  private static String reasonOf(RuntimeException refused) {
+    return refused.getMessage() == null ? refused.getClass().getSimpleName() : refused.getMessage();
+  }
+
+  /**
+   * Why a call could not start, read from what refused it: a content policy refusal is the gate
+   * doing its job, a missing input the request's fault; anything else (not entitled, not installed,
+   * nothing published) the platform's, which bills nobody.
+   */
+  private static FailureCause causeOf(RuntimeException refused) {
+    if (refused instanceof ContentPolicyRefusedException) {
+      return FailureCause.GUARD_REFUSAL;
+    }
+    if (refused.getClass() == IllegalArgumentException.class) {
+      return FailureCause.INPUT_INVALID;
+    }
+    return FailureCause.PLATFORM_UNAVAILABLE;
+  }
+
+  /** Whether this job id of a run's step is a run that step called. */
+  private boolean childOf(UUID runId, String jobId) {
+    return !jdbcTemplate
+        .queryForList(
+            "SELECT id FROM studio_run WHERE id::text = ? AND parent_run_id = ?",
+            UUID.class,
+            jobId,
+            runId)
+        .isEmpty();
+  }
+
+  /**
+   * Ends a called run that its parent no longer waits for. It holds nothing, so nothing is
+   * released; its in-flight jobs are told to stop, and it never reports back.
+   */
+  private void cancelChild(UUID child) {
+    jdbcTemplate
+        .queryForList(
+            "SELECT job_id FROM studio_run_step WHERE run_id = ? AND job_id IS NOT NULL"
+                + " AND status IN (?, ?)",
+            String.class,
+            child,
+            RunStepStatus.PENDING.name(),
+            RunStepStatus.RUNNING.name())
+        .forEach(jobId -> stepExecutionClient.cancel(child, jobId));
+    jdbcTemplate.update(
+        "UPDATE studio_run SET status = ?, finished_at = now() WHERE id = ? AND finished_at IS NULL",
+        RunStatus.CANCELLED.name(),
+        child);
+    jdbcTemplate.update(
+        "UPDATE studio_run_step SET status = ? WHERE run_id = ? AND status IN (?, ?)",
+        RunStepStatus.CANCELLED.name(),
+        child,
+        RunStepStatus.PENDING.name(),
+        RunStepStatus.RUNNING.name());
+  }
+
+  /** The runs this run's STUDIO steps called and that are still going. */
+  private List<UUID> openChildren(UUID runId) {
+    return jdbcTemplate.queryForList(
+        "SELECT id FROM studio_run WHERE parent_run_id = ? AND finished_at IS NULL",
+        UUID.class,
+        runId);
+  }
+
+  /**
+   * What a run settles: its own steps under its blueprint, and the steps of every run it called
+   * under theirs — the credits of a call are inside the parent's hold.
+   */
+  private Map<UUID, Blueprint> settledRuns(RunRow run, Blueprint blueprint) {
+    Map<UUID, Blueprint> settled = new LinkedHashMap<>();
+    settled.put(run.id(), blueprint);
+    jdbcTemplate
+        .query(
+            "SELECT id, studio_key, blueprint_version FROM studio_run WHERE parent_run_id = ?",
+            (rs, rowNum) ->
+                Map.entry(
+                    rs.getObject("id", UUID.class),
+                    blueprintRepository.find(
+                        rs.getString("studio_key"), rs.getString("blueprint_version"))),
+            run.id())
+        .forEach(child -> child.getValue().ifPresent(b -> settled.put(child.getKey(), b)));
+    return settled;
   }
 
   /**
@@ -601,9 +785,15 @@ public class RunSagaService {
         columns.json(outputs),
         run.id());
 
-    settlementService.settleSucceeded(run.id(), run.holdId(), blueprint);
+    if (run.parentRunId() == null) {
+      settlementService.settleSucceeded(run.id(), run.holdId(), settledRuns(run, blueprint));
+    }
     runAuditService.recordFinished(run.id(), run.actorId(), run.studioKey(), true, null);
     outboxService.append(run.id().toString(), "evt.studio.run.succeeded", runEvent(run));
+    if (run.parentRunId() != null) {
+      // A called run's outputs are its parent step's: {{steps.<id>.<output key>}} downstream.
+      applyOutcome(run.id().toString(), outputs, Map.of(), null, null, null);
+    }
   }
 
   /**
@@ -643,10 +833,16 @@ public class RunSagaService {
         RunStepStatus.PENDING.name(),
         RunStepStatus.RUNNING.name());
 
+    // The runs its STUDIO steps called end with it: nobody waits for them any more.
+    openChildren(run.id()).forEach(this::cancelChild);
+
     // Closing the hold belongs to RunSettlementService, which is the only author of it (ADR-059).
-    // This method decides that the run is over; what that costs is a different rule.
+    // This method decides that the run is over; what that costs is a different rule. A called run
+    // holds nothing: what it measured is settled with its parent's hold.
     boolean consumed =
-        settlementService.settleFailed(run.id(), run.holdId(), blueprint, declared, reason);
+        run.parentRunId() == null
+            && settlementService.settleFailed(
+                run.id(), run.holdId(), settledRuns(run, blueprint), declared, reason);
 
     meterRegistry
         // Named on the SAGA, not on `orazaka.studio.*`: that prefix is the pack preference
@@ -663,6 +859,11 @@ public class RunSagaService {
     // the pack's reviewed answer — a crisis response on a REGULATED pack (ADR-065).
     runAuditService.recordFinished(run.id(), run.actorId(), run.studioKey(), false, declared);
     outboxService.append(run.id().toString(), "evt.studio.run.failed", runEvent(run));
+    if (run.parentRunId() != null) {
+      // The child's failure is the parent step's, with the child's cause: the parent's policy for
+      // that cause decides (retry, skip or end the request).
+      applyOutcome(run.id().toString(), Map.of(), Map.of(), null, reason, declared);
+    }
   }
 
   private Map<String, Object> runEvent(RunRow run) {
@@ -843,7 +1044,7 @@ public class RunSagaService {
     return jdbcTemplate
         .query(
             "SELECT id, installation_id, actor_id, studio_key, blueprint_version, status, hold_id,"
-                + " correlation_id, inputs, data_class FROM studio_run WHERE id = ?",
+                + " correlation_id, inputs, data_class, parent_run_id FROM studio_run WHERE id = ?",
             (rs, rowNum) ->
                 new RunRow(
                     rs.getObject("id", UUID.class),
@@ -855,7 +1056,8 @@ public class RunSagaService {
                     rs.getString("hold_id"),
                     rs.getString("correlation_id"),
                     columns.objectMap(rs.getString("inputs")),
-                    DataClass.valueOf(rs.getString("data_class"))),
+                    DataClass.valueOf(rs.getString("data_class")),
+                    rs.getObject("parent_run_id", UUID.class)),
             runId)
         .stream()
         .findFirst()
@@ -876,5 +1078,6 @@ public class RunSagaService {
       String holdId,
       String correlationId,
       Map<String, Object> inputs,
-      DataClass dataClass) {}
+      DataClass dataClass,
+      UUID parentRunId) {}
 }

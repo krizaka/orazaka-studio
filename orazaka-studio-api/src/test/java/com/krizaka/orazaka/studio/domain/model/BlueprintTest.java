@@ -347,4 +347,62 @@ class BlueprintTest {
 
     assertDoesNotThrow(() -> of(List.of(publish)));
   }
+
+  /** A STUDIO step calling {@code target} (orazaka-studio#62). */
+  private static BlueprintStep call(String target) {
+    return new BlueprintStep(
+        "vitrine",
+        StepKind.STUDIO,
+        null,
+        null,
+        Set.of(),
+        Map.of("trade", "{{inputs.trade}}"),
+        "vitrine",
+        null,
+        0,
+        ErrorPolicy.FAIL,
+        Map.of(),
+        1,
+        Duration.ofMinutes(30),
+        null,
+        target);
+  }
+
+  @Test
+  void accepts_aStepThatCallsAnotherStudio() {
+    assertEquals(
+        "caption-studio", of(List.of(call("caption-studio"))).steps().getFirst().studioKey());
+  }
+
+  @Test
+  void rejects_aStudioThatCallsItself_becauseARunWouldRecurseForEver() {
+    BlueprintValidationException refused =
+        assertThrows(BlueprintValidationException.class, () -> of(List.of(call("trade-showcase"))));
+    assertTrue(refused.getMessage().contains("cannot call itself"));
+  }
+
+  @Test
+  void rejects_aStudioStepWithoutAKey_andAKeyOnAnyOtherKind() {
+    assertThrows(IllegalArgumentException.class, () -> call(null));
+    assertThrows(IllegalArgumentException.class, () -> call("Not A Key"));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new BlueprintStep(
+                "write",
+                StepKind.CAPABILITY,
+                "orazaka.core.chat.completion",
+                null,
+                Set.of(),
+                Map.of(),
+                null,
+                null,
+                0,
+                ErrorPolicy.FAIL,
+                Map.of(),
+                1,
+                Duration.ofMinutes(1),
+                null,
+                "caption-studio"));
+  }
 }

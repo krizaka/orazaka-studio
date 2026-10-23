@@ -11,6 +11,7 @@ import com.krizaka.orazaka.studioservice.domain.port.BlueprintRepository;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -129,6 +130,7 @@ public class BlueprintPublishService {
             .find(studioKey, version)
             .orElseThrow(() -> new BlueprintValidationException("no such version: " + version));
     assertEveryCapabilityIsRoutable(blueprint);
+    assertEveryCallIsPublished(blueprint);
 
     jdbcTemplate.update(
         "UPDATE studio_blueprint SET status = ?, published_at = now()"
@@ -172,6 +174,41 @@ public class BlueprintPublishService {
               + blueprint.version()
               + ": no enabled capability route for "
               + String.join(", ", unroutable));
+    }
+  }
+
+  /**
+   * Refuses a blueprint whose STUDIO steps call what cannot run (orazaka-studio#62).
+   *
+   * <p>The called Studio must have a published version, and that version must call no Studio
+   * itself: a composition is one level deep, so a run can never recurse into itself through
+   * another. (A Studio cannot call itself at all — {@code Blueprint} refuses that while parsing.)
+   * Every offending step is named at once, as for capabilities.
+   */
+  private void assertEveryCallIsPublished(Blueprint blueprint) {
+    List<String> refused = new ArrayList<>();
+    for (BlueprintStep step : blueprint.steps()) {
+      if (step.kind() != StepKind.STUDIO) {
+        continue;
+      }
+      Optional<Blueprint> target =
+          catalogService
+              .latestPublished(step.studioKey())
+              .flatMap(version -> blueprintRepository.find(step.studioKey(), version.version()));
+      if (target.isEmpty()) {
+        refused.add("step '" + step.id() + "' -> '" + step.studioKey() + "' is not published");
+      } else if (target.get().steps().stream().anyMatch(s -> s.kind() == StepKind.STUDIO)) {
+        refused.add("step '" + step.id() + "' -> '" + step.studioKey() + "' calls Studios itself");
+      }
+    }
+    if (!refused.isEmpty()) {
+      throw new BlueprintValidationException(
+          "cannot publish "
+              + blueprint.studioKey()
+              + " "
+              + blueprint.version()
+              + ": "
+              + String.join(", ", refused));
     }
   }
 

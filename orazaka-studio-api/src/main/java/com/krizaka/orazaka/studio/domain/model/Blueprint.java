@@ -73,7 +73,7 @@ public record Blueprint(
         configSchemaDefaults == null ? Map.of() : Map.copyOf(configSchemaDefaults);
 
     Set<String> ids = uniqueIds(steps);
-    validateNodes(steps, ids);
+    validateNodes(studioKey, steps, ids);
     assertAcyclic(steps);
   }
 
@@ -89,7 +89,7 @@ public record Blueprint(
   }
 
   /** Per-node rules that need the sibling set: dependency resolution and {@code out} uniqueness. */
-  private static void validateNodes(List<BlueprintStep> steps, Set<String> ids) {
+  private static void validateNodes(String studioKey, List<BlueprintStep> steps, Set<String> ids) {
     Set<String> publishedOutputs = new HashSet<>(steps.size());
     for (BlueprintStep step : steps) {
       if (step.kind() == StepKind.CAPABILITY
@@ -101,6 +101,9 @@ public record Blueprint(
           && (step.connectorType() == null || step.connectorType().isBlank())) {
         throw new BlueprintValidationException(
             step.id(), "a CONNECTOR step must name the connectorType it dispatches to");
+      }
+      if (step.kind() == StepKind.STUDIO && step.studioKey().equals(studioKey)) {
+        throw new BlueprintValidationException(step.id(), "a Studio cannot call itself");
       }
       if (step.forEach() != null && step.maxParallel() < 1) {
         throw new BlueprintValidationException(

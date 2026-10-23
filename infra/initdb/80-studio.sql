@@ -302,6 +302,9 @@ CREATE TABLE studio_run (
     -- orazaka-studio#62. A run a STUDIO step started: it holds nothing (its work is settled inside the parent's
     -- hold) and its outcome becomes the parent step's, found by the step's job_id = this run's id. One level.
     parent_run_id     UUID REFERENCES studio_run(id) ON DELETE CASCADE,
+    -- orazaka-studio#63. The run this one resumes: its steps before the resumed one were copied with their outputs
+    -- (and no consumption, so they are never billed twice). No FK: the origin may be purged by retention first.
+    resumed_from      UUID,
     started_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
     finished_at       TIMESTAMPTZ,
     CONSTRAINT ck_run_data_class CHECK (data_class IN ('STANDARD','SENSITIVE','REGULATED')),

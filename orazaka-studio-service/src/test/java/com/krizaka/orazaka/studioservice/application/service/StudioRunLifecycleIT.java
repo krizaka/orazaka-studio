@@ -15,6 +15,7 @@ import com.krizaka.orazaka.jobs.domain.port.CapabilityRoutingClient;
 import com.krizaka.orazaka.studio.domain.model.RunStatus;
 import com.krizaka.orazaka.studio.domain.model.RunStepStatus;
 import com.krizaka.orazaka.studio.domain.model.StepDispatch;
+import com.krizaka.orazaka.studioservice.domain.exception.RunNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.exception.TooManyConcurrentRunsException;
 import com.krizaka.orazaka.studioservice.domain.model.InstalledStudio;
 import com.krizaka.orazaka.studioservice.domain.model.RunArtefact;
@@ -531,6 +532,81 @@ class StudioRunLifecycleIT {
     RunDetail finished = runService.find(run.id(), ACTOR).orElseThrow();
     assertEquals(RunStatus.SUCCEEDED, finished.status());
     assertEquals("Le bail", finished.outputs().getFirst().value());
+  // ── orazaka-studio#63: resume a finished run from a step ─────────────
+
+  @Test
+  @DisplayName(
+      "[studio#63] a resume re-runs the step asked for, keeps the others' outputs and bills only"
+          + " what ran again")
+  void aResumeRerunsOnlyFromTheStep() {
+    RunDetail origin = startRun();
+    List<String> fanOut = List.copyOf(executor.dispatched);
+    fanOut.forEach(
+        job ->
+            sagaService.applyOutcome(
+                job, Map.of("content", "ok"), Map.of("tokens", 100), "llava", null, null));
+    List<String> second =
+        List.copyOf(executor.dispatched).stream().filter(job -> !fanOut.contains(job)).toList();
+    // caption succeeds; showcase fails twice (its RETRY allows two attempts): the run fails.
+    for (String job : second) {
+      boolean isCaption =
+          "caption"
+              .equals(
+                  jdbcTemplate.queryForObject(
+                      "SELECT step_id FROM studio_run_step WHERE job_id = ?", String.class, job));
+      if (isCaption) {
+        sagaService.applyOutcome(
+            job, Map.of("content", "La légende"), Map.of("tokens", 50), "llama", null, null);
+      } else {
+        sagaService.applyOutcome(job, Map.of(), "render failed");
+        sagaService.applyOutcome(executor.dispatched.getLast(), Map.of(), "render failed");
+      }
+    }
+    assertEquals(RunStatus.FAILED, runService.find(origin.id(), ACTOR).orElseThrow().status());
+    int dispatchedBefore = executor.dispatched.size();
+    credits.aggregateSettlements.clear();
+
+    RunDetail resumed = runService.resume(origin.id(), ACTOR, "showcase");
+
+    assertEquals(origin.id(), resumed.resumedFrom(), "the new run names its origin");
+    assertEquals(
+        dispatchedBefore + 1, executor.dispatched.size(), "only the step asked for runs again");
+    sagaService.applyOutcome(
+        executor.dispatched.getLast(),
+        Map.of("url", "/media/img-2.png"),
+        Map.of("images", 1),
+        "flux",
+        null,
+        null);
+
+    RunDetail finished = runService.find(resumed.id(), ACTOR).orElseThrow();
+    assertEquals(RunStatus.SUCCEEDED, finished.status());
+    assertEquals(
+        "La légende",
+        finished.outputs().stream()
+            .filter(artefact -> "caption".equals(artefact.key()))
+            .findFirst()
+            .orElseThrow()
+            .value(),
+        "a kept step's output is the origin's");
+    assertEquals(
+        1,
+        credits.aggregateSettlements.getFirst().size(),
+        "only the re-run step is billed: the kept ones carry no consumption");
+  }
+
+  @Test
+  @DisplayName("[studio#63] a run still going, or a step the blueprint lacks, cannot be resumed")
+  void aResumeIsRefusedWhenItCannotBeRight() {
+    RunDetail running = startRun();
+    assertThrows(
+        IllegalStateException.class, () -> runService.resume(running.id(), ACTOR, "showcase"));
+    runService.cancel(running.id(), ACTOR);
+    assertThrows(
+        IllegalArgumentException.class, () -> runService.resume(running.id(), ACTOR, "nope"));
+    assertThrows(
+        RunNotFoundException.class,
+        () -> runService.resume(running.id(), "someone-else", "caption"));
   }
 
   // ── §15: install → run → step outcomes → settle ───────────────────────────

@@ -6,6 +6,7 @@ import com.krizaka.orazaka.studioservice.application.service.StudioRunService;
 import com.krizaka.orazaka.studioservice.domain.exception.RunNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.model.ContentDecision;
 import com.krizaka.orazaka.studioservice.domain.model.RunDetail;
+import com.krizaka.orazaka.studioservice.infrastructure.adapter.rest.dto.ResumeRequest;
 import com.krizaka.orazaka.studioservice.infrastructure.adapter.rest.dto.RunRequest;
 import com.krizaka.orazaka.studioservice.infrastructure.adapter.rest.dto.RunResponse;
 import java.io.IOException;
@@ -323,6 +324,24 @@ class StudioRunController {
   ResponseEntity<Void> approve(@PathVariable UUID runId, @AuthenticationPrincipal Jwt actor) {
     runService.approve(runId, actor.getSubject());
     return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
+  }
+
+  /**
+   * Starts a new run from a step of a finished one (orazaka-studio#63): the steps before it keep
+   * their recorded outputs and only the re-run steps are billed.
+   *
+   * @param runId the finished run
+   * @param request the step to run again
+   * @param actor the authenticated caller
+   * @return {@code 202} with the new run, which names its origin in {@code resumedFrom}
+   */
+  @PostMapping("/runs/{runId}/resume")
+  ResponseEntity<RunResponse> resume(
+      @PathVariable UUID runId,
+      @RequestBody ResumeRequest request,
+      @AuthenticationPrincipal Jwt actor) {
+    return ResponseEntity.accepted()
+        .body(RunResponse.from(runService.resume(runId, actor.getSubject(), request.fromStep())));
   }
 
   /**

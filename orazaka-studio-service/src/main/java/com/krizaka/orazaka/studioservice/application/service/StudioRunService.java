@@ -30,10 +30,12 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -59,6 +61,7 @@ public class StudioRunService {
 
   private static final String SELECT_RUN =
       "SELECT id, installation_id, actor_id, studio_key, blueprint_version, status, hold_id, cached_from,"
+          + " resumed_from,"
           + " correlation_id, inputs, outputs, error_message, started_at, finished_at"
           + " FROM studio_run";
 
@@ -513,6 +516,165 @@ public class StudioRunService {
   }
 
   /**
+   * Starts a new run from a step of a finished one (orazaka-studio#63).
+   *
+   * <p>For a run that failed at step four, or whose last step the person wants redone (a
+   * voice-over): the steps that need not run again keep their recorded outputs, and only the others
+   * run. Those are the step asked for, every step that depends on it, and every step that did not
+   * succeed. The new run has its own id and names its origin ({@code resumed_from}), the same
+   * version, inputs, installation and data class, and its own hold. The kept steps are copied
+   * <b>without their consumption</b>, so only the re-run steps are billed.
+   *
+   * @param originId the finished run
+   * @param actorId the opaque billable subject, who must own it
+   * @param fromStep the step to run again
+   * @return the accepted run
+   * @throws RunNotFoundException when the id names nothing this actor owns
+   * @throws IllegalStateException when the origin is still going, or is a run a step called
+   * @throws IllegalArgumentException when the step is not in the origin's blueprint
+   */
+  @Transactional
+  public RunDetail resume(UUID originId, String actorId, String fromStep) {
+    RunDetail origin =
+        find(originId, actorId).orElseThrow(() -> new RunNotFoundException(originId));
+    if (origin.finishedAt() == null) {
+      throw new IllegalStateException("run is still " + origin.status() + " and cannot be resumed");
+    }
+    if (jdbcTemplate.queryForObject(
+            "SELECT parent_run_id FROM studio_run WHERE id = ?", UUID.class, originId)
+        != null) {
+      throw new IllegalStateException("a run a step called is resumed through its parent");
+    }
+    Blueprint blueprint =
+        blueprintRepository
+            .find(origin.studioKey(), origin.blueprintVersion())
+            .orElseThrow(
+                () ->
+                    new IllegalStateException(
+                        "version no longer exists: " + origin.blueprintVersion()));
+    if (blueprint.steps().stream().noneMatch(step -> step.id().equals(fromStep))) {
+      throw new IllegalArgumentException("no step '" + fromStep + "' in " + origin.studioKey());
+    }
+    if (origin.installationId() != null) {
+      InstalledStudio installation =
+          installationService
+              .find(origin.installationId(), actorId)
+              .orElseThrow(() -> new InstallationNotFoundException(origin.installationId()));
+      if (installation.status() == InstallationStatus.PAUSED
+          || installation.status() == InstallationStatus.REVOKED) {
+        throw new IllegalStateException(
+            "installation is " + installation.status() + " and cannot run");
+      }
+    }
+    enforceConcurrencyCap(actorId);
+    Map<String, Object> inputs =
+        columns.objectMap(
+            jdbcTemplate.queryForObject(
+                "SELECT inputs FROM studio_run WHERE id = ?", String.class, originId));
+    // The policy as it stands today: a rule tightened since the origin ran applies to its resume.
+    contentPolicy.enforce(actorId, origin.studioKey(), inputs, providersOf(blueprint));
+
+    List<String> kept = keptSteps(blueprint, originId, fromStep);
+    String correlationId = UUID.randomUUID().toString();
+    String holdId =
+        creditReservationService.hold(actorId, correlationId, blueprint.estimatedCredits());
+    UUID runId = UUID.randomUUID();
+    jdbcTemplate.update(
+        "INSERT INTO studio_run (id, installation_id, actor_id, studio_key, blueprint_version,"
+            + " status, hold_id, correlation_id, inputs, data_class, input_fingerprint,"
+            + " resumed_from)"
+            + " SELECT ?, installation_id, actor_id, studio_key, blueprint_version, ?, ?, ?, inputs,"
+            + " data_class, input_fingerprint, id FROM studio_run WHERE id = ?",
+        runId,
+        RunStatus.RUNNING.name(),
+        holdId,
+        correlationId,
+        originId);
+    for (String stepId : kept) {
+      // No job id (nothing to wait for) and no consumption (it was billed with the origin).
+      jdbcTemplate.update(
+          "INSERT INTO studio_run_step (run_id, step_id, ordinal, status, attempts, output,"
+              + " started_at, finished_at)"
+              + " SELECT ?, step_id, ordinal, status, attempts, output, started_at, finished_at"
+              + " FROM studio_run_step WHERE run_id = ? AND step_id = ?",
+          runId,
+          originId,
+          stepId);
+    }
+    DataClass dataClass =
+        DataClass.valueOf(
+            jdbcTemplate.queryForObject(
+                "SELECT data_class FROM studio_run WHERE id = ?", String.class, runId));
+    runAuditService.recordStarted(runId, actorId, origin.studioKey(), dataClass);
+    outboxService.append(
+        runId.toString(),
+        "evt.studio.run.started",
+        Map.of(
+            "runId",
+            runId.toString(),
+            "actorId",
+            actorId,
+            "studioKey",
+            origin.studioKey(),
+            "correlationId",
+            correlationId,
+            "resumedFrom",
+            originId.toString()));
+
+    runSagaService.advance(runId);
+    return find(runId, actorId).orElseThrow(() -> new RunNotFoundException(runId));
+  }
+
+  /**
+   * The steps a resume keeps: those of the origin that succeeded or were skipped, outside the
+   * re-run set. That set is the step asked for and every step that did not succeed, closed over
+   * their dependants, so no kept step ever carries an output computed from something that runs
+   * again.
+   */
+  private List<String> keptSteps(Blueprint blueprint, UUID originId, String fromStep) {
+    Map<String, List<String>> states = new HashMap<>();
+    jdbcTemplate
+        .query(
+            "SELECT step_id, status FROM studio_run_step WHERE run_id = ?",
+            (rs, rowNum) -> Map.entry(rs.getString("step_id"), rs.getString("status")),
+            originId)
+        .forEach(
+            row ->
+                states.computeIfAbsent(row.getKey(), id -> new ArrayList<>()).add(row.getValue()));
+
+    Set<String> rerun = new HashSet<>();
+    rerun.add(fromStep);
+    for (BlueprintStep step : blueprint.steps()) {
+      List<String> instances = states.get(step.id());
+      // Every instance of a fan-out must have succeeded, or the step was skipped whole.
+      boolean done =
+          instances != null
+              && instances.stream()
+                  .allMatch(
+                      status ->
+                          status.equals(RunStepStatus.SUCCEEDED.name())
+                              || status.equals(RunStepStatus.SKIPPED.name()));
+      if (!done) {
+        rerun.add(step.id());
+      }
+    }
+    boolean grew = true;
+    while (grew) {
+      grew = false;
+      for (BlueprintStep step : blueprint.steps()) {
+        if (!rerun.contains(step.id()) && step.dependsOn().stream().anyMatch(rerun::contains)) {
+          rerun.add(step.id());
+          grew = true;
+        }
+      }
+    }
+    return blueprint.steps().stream()
+        .map(BlueprintStep::id)
+        .filter(id -> !rerun.contains(id))
+        .toList();
+  }
+
+  /**
    * Resolves an approval step, resuming the run.
    *
    * @param runId the parked run
@@ -801,7 +963,8 @@ public class StudioRunService {
             columns.instantAt(rs, "started_at"),
             columns.instantAt(rs, "finished_at"),
             List.of(),
-            rs.getObject("cached_from", UUID.class));
+            rs.getObject("cached_from", UUID.class),
+            rs.getObject("resumed_from", UUID.class));
     return new RawRun(run, values);
   }
 }

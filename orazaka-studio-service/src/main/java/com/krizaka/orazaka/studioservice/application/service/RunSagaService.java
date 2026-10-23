@@ -169,18 +169,35 @@ public class RunSagaService {
     }
     StepRef ref = located.get();
 
-    RunStepStatus outcome = error == null ? RunStepStatus.SUCCEEDED : RunStepStatus.FAILED;
+    String failure = error;
+    FailureCause declared = cause;
+    Map<String, Object> produced = output;
+    if (failure == null) {
+      // A step that declares its output's shape is not SUCCEEDED on an output outside it
+      // (orazaka-studio#59): it fails as the executor's fault, its own retry policy applies, and
+      // the steps after it never consume a hollow result. Path and rule only, never the value.
+      Optional<String> broken = contractViolation(ref, output);
+      if (broken.isPresent()) {
+        failure = "OUTPUT_INVALID: " + broken.get();
+        declared = FailureCause.EXECUTOR_FAULT;
+        produced = Map.of();
+      }
+    }
+
+    RunStepStatus outcome = failure == null ? RunStepStatus.SUCCEEDED : RunStepStatus.FAILED;
     int applied =
         jdbcTemplate.update(
             "UPDATE studio_run_step SET status = ?, output = ?::jsonb, error_message = ?,"
                 + " failure_cause = ?, consumption = ?::jsonb, model_name = ?, finished_at = now()"
                 + " WHERE run_id = ? AND step_id = ? AND ordinal = ? AND status = ?",
             outcome.name(),
-            columns.json(output),
-            error,
+            columns.json(produced),
+            failure,
             // Stored beside the message, not derived from it later: by the time the DAG advances,
             // the executor that knew why is long gone (ADR-053).
-            error == null ? null : (cause == null ? FailureCause.EXECUTOR_FAULT : cause).name(),
+            failure == null
+                ? null
+                : (declared == null ? FailureCause.EXECUTOR_FAULT : declared).name(),
             // Written in the SAME statement that marks the step terminal, and guarded by the same
             // status predicate: a redelivery that loses the race applies neither, so a step can
             // never be counted twice in the run's total.
@@ -306,6 +323,33 @@ public class RunSagaService {
         attempts + 1,
         step.maxAttempts());
     return true;
+  }
+
+  /**
+   * What the step's output breaks in its declared contract, or nothing — the same {@code
+   * OutputContract} the run's outputs are held to (ADR-076), never a second implementation.
+   */
+  private Optional<String> contractViolation(StepRef ref, Map<String, Object> output) {
+    RunRow run = loadRun(ref.runId());
+    if (run == null) {
+      return Optional.empty();
+    }
+    Optional<String> contract =
+        blueprintRepository.find(run.studioKey(), run.blueprintVersion()).stream()
+            .flatMap(blueprint -> blueprint.steps().stream())
+            .filter(step -> step.id().equals(ref.stepId()))
+            .map(BlueprintStep::outputContract)
+            .filter(Objects::nonNull)
+            .findFirst();
+    if (contract.isEmpty()) {
+      return Optional.empty();
+    }
+    try {
+      columns.conforming(contract.get(), output == null ? Map.of() : output);
+      return Optional.empty();
+    } catch (OutputContractException broken) {
+      return Optional.of(String.join("; ", broken.violations().stream().limit(5).toList()));
+    }
   }
 
   /** The fan-out element a given ordinal was dispatched with, so a retry re-renders identically. */

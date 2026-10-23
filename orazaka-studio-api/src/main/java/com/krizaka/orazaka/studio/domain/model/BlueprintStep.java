@@ -36,6 +36,9 @@ import java.util.regex.Pattern;
  * @param condition one of the four supported comparison forms, or {@code null} to always run
  * @param studioKey the published Studio a {@link StepKind#STUDIO} step calls; {@code null} for
  *     every other kind
+ * @param outputContract the JSON Schema (the saga's enforced subset, ADR-076) the step's output
+ *     must satisfy before it counts as SUCCEEDED, as JSON text; {@code null} for none
+ *     (orazaka-studio#59)
  */
 public record BlueprintStep(
     String id,
@@ -52,7 +55,8 @@ public record BlueprintStep(
     int maxAttempts,
     Duration timeout,
     String condition,
-    String studioKey) {
+    String studioKey,
+    String outputContract) {
 
   /** Addressable from three places, so it may not carry case, whitespace or punctuation. */
   private static final Pattern ID = Pattern.compile("^[a-z][a-z0-9-]{0,59}$");
@@ -100,6 +104,7 @@ public record BlueprintStep(
         maxAttempts,
         timeout,
         condition,
+        null,
         null);
   }
 
@@ -133,6 +138,7 @@ public record BlueprintStep(
               + ", was: "
               + studioKey);
     }
+    outputContract = outputContract == null || outputContract.isBlank() ? null : outputContract;
     dependsOn = dependsOn == null ? Set.of() : Set.copyOf(dependsOn);
     inputs = inputs == null ? Map.of() : Map.copyOf(inputs);
 

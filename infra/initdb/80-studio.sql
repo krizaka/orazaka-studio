@@ -536,6 +536,8 @@ INSERT INTO studio_runtime_config (config_key, config_value, value_type, descrip
     ('run.step-timeout-seconds.interactive', '300',  'int',     'Per-step ceiling in the INTERACTIVE lane — 30x the measured p95 of a chat or analysis step.'),
     ('run.step-timeout-seconds.batch',       '1800', 'int',     'Per-step ceiling in the BATCH lane — room for queue wait behind ~25 image generations at the measured p50 of 67 s.'),
  ('run.fan-out-max',                 '10',    'int',     'Hard cap on forEach expansion — protects the MLX budget.'),
+ ('run.blueprint-cache-size',       '100',    'int',     'Maximum published blueprint versions parsed and cached per service instance; 0 disables the cache.'),
+ ('run.outcome-listener.concurrency', '2',    'int',     'Outcome listener consumer count per service instance, adjusted live on its virtual-thread executor.'),
  ('marketplace.third-party-enabled', 'false', 'boolean', 'Opens publishing to non-orazaka publishers.'),
  ('retention.run-days',                '90',    'int',     'Days a finished run and its artefacts are kept (GDPR / Loi 25).'),
  -- SENSITIVE runs age out sooner, and an installation may lower this further but never raise it:

@@ -14,10 +14,12 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import jdk.jfr.Recording;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -263,57 +265,110 @@ class RunOverheadMeasurementIT {
     List<String> queryCounts = new ArrayList<>();
     int warmups = 10;
     int samples = 50;
-    List<String> photos = java.util.stream.IntStream.range(0, 20).mapToObj(i -> "photo-" + i).toList();
+    List<String> photos =
+        java.util.stream.IntStream.range(0, 20).mapToObj(i -> "photo-" + i).toList();
 
-    for (int sample = 0; sample < warmups + samples; sample++) {
-      RunDetail run = runService.start(hotPathInstallationId, ACTOR, Map.of("photos", photos));
-      List<String> fanOutJobs =
-          jdbcTemplate.queryForList(
-              "SELECT job_id FROM studio_run_step WHERE run_id = ? AND step_id = 'stage1'"
-                  + " ORDER BY ordinal",
-              String.class,
-              run.id());
-      assertEquals(20, fanOutJobs.size(), "the first stage must fan out to 20 jobs");
-
-      for (int i = 0; i < fanOutJobs.size(); i++) {
-        boolean record = sample == warmups && (i == 0 || i == fanOutJobs.size() - 1);
-        if (record) {
+    Recording recording = startJfrRecording();
+    try {
+      for (int sample = 0; sample < warmups + samples; sample++) {
+        if (sample == warmups - 1) {
           counter.begin();
         }
-        long started = System.nanoTime();
-        sagaService.applyOutcome(fanOutJobs.get(i), Map.of("url", "/media/m1.png"), null);
-        long elapsed = System.nanoTime() - started;
-        if (sample >= warmups) {
-          outcomeMicros.add(elapsed / 1000);
+        RunDetail run = runService.start(hotPathInstallationId, ACTOR, Map.of("photos", photos));
+        if (sample == warmups - 1) {
+          List<String> startStatements = counter.end();
+          long declarationReads =
+              startStatements.stream().filter(sql -> sql.contains("FROM pack_studio")).count();
+          assertEquals(1, declarationReads, "fan-out dispatch reads pack declarations once");
+          queryCounts.add("fanout-start-declaration-reads|" + declarationReads);
         }
-        if (record) {
-          queryCounts.add(
-              "stage1-" + (i == 0 ? "intermediate" : "last") + "|" + counter.end().size());
-        }
-      }
-
-      for (int stage = 2; stage <= 5; stage++) {
-        String stepId = "stage" + stage;
-        String jobId =
-            jdbcTemplate.queryForObject(
-                "SELECT job_id FROM studio_run_step WHERE run_id = ? AND step_id = ?",
+        List<String> fanOutJobs =
+            jdbcTemplate.queryForList(
+                "SELECT job_id FROM studio_run_step WHERE run_id = ? AND step_id = 'stage1'"
+                    + " ORDER BY ordinal",
                 String.class,
-                run.id(),
-                stepId);
-        boolean record = sample == warmups && stage == 5;
-        if (record) {
-          counter.begin();
+                run.id());
+        assertEquals(20, fanOutJobs.size(), "the first stage must fan out to 20 jobs");
+        if (sample == warmups - 1) {
+          queryCounts.add(
+              "job-index-plan|"
+                  + jdbcTemplate
+                      .queryForList(
+                          "EXPLAIN (ANALYZE, BUFFERS) SELECT run_id, step_id, ordinal"
+                              + " FROM studio_run_step"
+                              + " WHERE job_id = ?",
+                          String.class,
+                          fanOutJobs.getFirst())
+                      .stream()
+                      .collect(java.util.stream.Collectors.joining(" / ")));
+          queryCounts.add(
+              "run-snapshot-plan|"
+                  + jdbcTemplate
+                      .queryForList(
+                          "EXPLAIN (ANALYZE, BUFFERS) SELECT step_id, ordinal, status,"
+                              + " failure_cause, error_message,"
+                              + " finished_at, output FROM studio_run_step WHERE run_id = ?"
+                              + " ORDER BY step_id, ordinal",
+                          String.class,
+                          run.id())
+                      .stream()
+                      .collect(java.util.stream.Collectors.joining(" / ")));
         }
-        long started = System.nanoTime();
-        sagaService.applyOutcome(jobId, Map.of("url", "/media/m1.png"), null);
-        long elapsed = System.nanoTime() - started;
-        if (sample >= warmups) {
-          outcomeMicros.add(elapsed / 1000);
+
+        for (int i = 0; i < fanOutJobs.size(); i++) {
+          boolean record =
+              sample == warmups - 1 && (i == 0 || i == fanOutJobs.size() - 1);
+          if (record) {
+            counter.begin();
+          }
+          long started = System.nanoTime();
+          sagaService.applyOutcome(fanOutJobs.get(i), Map.of("url", "/media/m1.png"), null);
+          long elapsed = System.nanoTime() - started;
+          if (sample >= warmups) {
+            outcomeMicros.add(elapsed / 1000);
+          }
+          if (record) {
+            List<String> statements = counter.end();
+            int expected = i == 0 ? 3 : 5;
+            assertEquals(
+                expected,
+                statements.size(),
+                "one outcome snapshot reads all states, causes, and outputs in one query");
+            queryCounts.add(
+                "stage1-" + (i == 0 ? "intermediate" : "last") + "|" + statements.size());
+          }
         }
-        if (record) {
-          queryCounts.add("stage5-terminal|" + counter.end().size());
+
+        for (int stage = 2; stage <= 5; stage++) {
+          String stepId = "stage" + stage;
+          String jobId =
+              jdbcTemplate.queryForObject(
+                  "SELECT job_id FROM studio_run_step WHERE run_id = ? AND step_id = ?",
+                  String.class,
+                  run.id(),
+                  stepId);
+          boolean record = sample == warmups - 1 && stage == 5;
+          if (record) {
+            counter.begin();
+          }
+          long started = System.nanoTime();
+          sagaService.applyOutcome(jobId, Map.of("url", "/media/m1.png"), null);
+          long elapsed = System.nanoTime() - started;
+          if (sample >= warmups) {
+            outcomeMicros.add(elapsed / 1000);
+          }
+          if (record) {
+            queryCounts.add("stage5-terminal|" + counter.end().size());
+          }
         }
+
+        assertEquals(
+            RunStatus.SUCCEEDED,
+            runService.find(run.id(), ACTOR).orElseThrow().status(),
+            "the five-step run completes");
       }
+    } finally {
+      finishJfrRecording(recording);
     }
 
     List<Long> ordered = outcomeMicros.stream().sorted().toList();
@@ -331,6 +386,49 @@ class RunOverheadMeasurementIT {
     writeHotPathMeasurement(result, outcomeMicros);
   }
 
+  @Test
+  @DisplayName("The published-blueprint cache size takes effect without restarting the service")
+  void blueprintCacheSizeIsReadLive() {
+    List<String> photos =
+        java.util.stream.IntStream.range(0, 20).mapToObj(i -> "photo-" + i).toList();
+    RunDetail run = runService.start(hotPathInstallationId, ACTOR, Map.of("photos", photos));
+    List<String> fanOutJobs =
+        jdbcTemplate.queryForList(
+            "SELECT job_id FROM studio_run_step WHERE run_id = ? AND step_id = 'stage1'"
+                + " ORDER BY ordinal",
+            String.class,
+            run.id());
+
+    jdbcTemplate.update(
+        "UPDATE studio_runtime_config SET config_value = '0' WHERE config_key = ?",
+        "run.blueprint-cache-size");
+    try {
+      counter.begin();
+      sagaService.applyOutcome(fanOutJobs.getFirst(), Map.of("url", "/media/m1.png"), null);
+      assertTrue(
+          counter.end().stream().anyMatch(sql -> sql.contains("FROM studio_blueprint")),
+          "zero disables the cache immediately");
+    } finally {
+      jdbcTemplate.update(
+          "UPDATE studio_runtime_config SET config_value = '100' WHERE config_key = ?",
+          "run.blueprint-cache-size");
+    }
+
+    for (String jobId : fanOutJobs.subList(1, fanOutJobs.size())) {
+      sagaService.applyOutcome(jobId, Map.of("url", "/media/m1.png"), null);
+    }
+    for (int stage = 2; stage <= 5; stage++) {
+      String jobId =
+          jdbcTemplate.queryForObject(
+              "SELECT job_id FROM studio_run_step WHERE run_id = ? AND step_id = ?",
+              String.class,
+              run.id(),
+              "stage" + stage);
+      sagaService.applyOutcome(jobId, Map.of("url", "/media/m1.png"), null);
+    }
+    assertEquals(RunStatus.SUCCEEDED, runService.find(run.id(), ACTOR).orElseThrow().status());
+  }
+
   private static void writeHotPathMeasurement(String summary, List<Long> outcomeMicros) {
     StringBuilder out = new StringBuilder("# M1 five-step / fan-out-20 measurement\n");
     out.append(summary).append('\n');
@@ -344,6 +442,28 @@ class RunOverheadMeasurementIT {
       throw new UncheckedIOException("cannot write " + target, unwritable);
     }
     System.out.println("M1 raw samples written to " + target.toAbsolutePath());
+  }
+
+  private static Recording startJfrRecording() {
+    Recording recording = new Recording();
+    recording.setName("studio-saga-hot-path");
+    recording.enable("jdk.ExecutionSample").withPeriod(Duration.ofMillis(10));
+    recording.enable("jdk.JavaMonitorEnter").withThreshold(Duration.ofMillis(1));
+    recording.start();
+    return recording;
+  }
+
+  private static void finishJfrRecording(Recording recording) {
+    Path target = Path.of("target", "m1-saga-hot-path.jfr");
+    try {
+      recording.stop();
+      Files.createDirectories(target.getParent());
+      recording.dump(target);
+    } catch (IOException unwritable) {
+      throw new UncheckedIOException("cannot write " + target, unwritable);
+    } finally {
+      recording.close();
+    }
   }
 
   /**

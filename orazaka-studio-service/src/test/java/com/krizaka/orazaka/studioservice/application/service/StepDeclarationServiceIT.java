@@ -22,10 +22,8 @@ import org.testcontainers.utility.MountableFile;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * {@link StepDeclarationService#forTurn}: the declarations a conversational turn reads, against the
- * <b>real</b> {@code 80-studio.sql} (ADR-076): the pack row's JSONB, the installation's region and
- * recorded consent, and the row predicate that keeps one person's installation out of another's
- * turn.
+ * {@link StepDeclarationService#forTurn} and {@link StepDeclarationService#forDispatch}: turn and
+ * step declarations against the <b>real</b> {@code 80-studio.sql} (ADR-076).
  */
 class StepDeclarationServiceIT {
 
@@ -130,6 +128,22 @@ class StepDeclarationServiceIT {
     assertThat(declared.crisisReply()).startsWith("Je m'arrête là.").contains("1 866 APPELLE");
     assertThat(declared.crisisResource().sourceUrl()).isEqualTo("https://www.quebec.ca/");
     assertThat(declared.systemPrompt()).isEqualTo("Je suis une présence IA.");
+  }
+
+  @Test
+  @DisplayName("A dispatch reads the pack declarations and installation region together")
+  void readsDispatchDeclarationsInOneLookup() {
+    UUID id = install(ACTOR, "1.0", "ACTIVE");
+
+    StepDeclarationService.DispatchDeclarations declared =
+        service.forDispatch("session-summary", id);
+
+    assertThat(declared.scopeGuard()).isPresent();
+    assertThat(declared.scopeGuard().orElseThrow().refusedTerms()).containsExactly("posologie");
+    assertThat(declared.crisisTerms()).contains("en finir");
+    assertThat(declared.crisisResponse().orElseThrow())
+        .startsWith("Je m'arrête là.")
+        .contains("1 866 APPELLE");
   }
 
   @Test

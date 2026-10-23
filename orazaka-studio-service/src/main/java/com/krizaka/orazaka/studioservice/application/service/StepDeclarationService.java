@@ -78,14 +78,7 @@ public class StepDeclarationService {
    * @return the declared terms, or empty
    */
   public Optional<String> crisisTerms(String studioKey) {
-    return safety(studioKey)
-        .map(safety -> safety.get("crisisTerms"))
-        .map(
-            terms ->
-                terms instanceof List<?> list
-                    ? list.stream().map(String::valueOf).collect(Collectors.joining(","))
-                    : String.valueOf(terms))
-        .filter(terms -> !terms.isBlank());
+    return safety(studioKey).flatMap(this::crisisTerms);
   }
 
   /**
@@ -115,22 +108,38 @@ public class StepDeclarationService {
             .filter(Objects::nonNull)
             .findFirst()
             .orElse(null);
-    if (region == null) {
-      return Optional.empty();
-    }
-    Object resources = safety.get().get("resources");
-    if (!(resources instanceof Map<?, ?> byRegion)
-        || !(byRegion.get(region) instanceof Map<?, ?> resource)) {
-      return Optional.empty();
-    }
-    String line =
-        resource.get("label")
-            + " — "
-            + resource.get("contact")
-            + " ("
-            + resource.get("availability")
-            + ")";
-    return Optional.of(safety.get().get("response") + "\n\n" + line);
+    return crisisResponse(safety.get(), region);
+  }
+
+  DispatchDeclarations forDispatch(String studioKey, UUID installationId) {
+    return jdbcTemplate
+        .query(
+            """
+            SELECT p.scope_guard, p.safety, i.region
+              FROM pack_studio ps
+              JOIN pack p ON p.pack_key = ps.pack_key
+              LEFT JOIN studio_installation i ON i.id = ?
+             WHERE ps.studio_key = ?
+            """,
+            (rs, rowNum) ->
+                new DeclarationRow(
+                    rs.getString("scope_guard"),
+                    rs.getString("safety"),
+                    rs.getString("region")),
+            installationId,
+            studioKey)
+        .stream()
+        .findFirst()
+        .map(
+            row -> {
+              Map<String, Object> safety = columns.objectMap(row.safety());
+              return new DispatchDeclarations(
+                  Optional.ofNullable(columns.scopeGuard(row.scopeGuard())),
+                  crisisTerms(safety),
+                  crisisResponse(safety, row.region()));
+            })
+        .orElseGet(
+            () -> new DispatchDeclarations(Optional.empty(), Optional.empty(), Optional.empty()));
   }
 
   /**
@@ -166,6 +175,35 @@ public class StepDeclarationService {
         .stream()
         .filter(Objects::nonNull)
         .findFirst();
+  }
+
+  private Optional<String> crisisTerms(Map<String, Object> safety) {
+    return Optional.ofNullable(safety.get("crisisTerms"))
+        .map(
+            terms ->
+                terms instanceof List<?> list
+                    ? list.stream().map(String::valueOf).collect(Collectors.joining(","))
+                    : String.valueOf(terms))
+        .filter(terms -> !terms.isBlank());
+  }
+
+  private Optional<String> crisisResponse(Map<String, Object> safety, String region) {
+    if (safety.isEmpty() || region == null) {
+      return Optional.empty();
+    }
+    Object resources = safety.get("resources");
+    if (!(resources instanceof Map<?, ?> byRegion)
+        || !(byRegion.get(region) instanceof Map<?, ?> resource)) {
+      return Optional.empty();
+    }
+    String line =
+        resource.get("label")
+            + " — "
+            + resource.get("contact")
+            + " ("
+            + resource.get("availability")
+            + ")";
+    return Optional.of(safety.get("response") + "\n\n" + line);
   }
 
   /**
@@ -253,6 +291,13 @@ public class StepDeclarationService {
   }
 
   /** One installation joined to its pack row. */
+  private record DeclarationRow(String scopeGuard, String safety, String region) {}
+
+  record DispatchDeclarations(
+      Optional<PackScopeGuard> scopeGuard,
+      Optional<String> crisisTerms,
+      Optional<String> crisisResponse) {}
+
   private record InstallationRow(
       String studioKey,
       String region,

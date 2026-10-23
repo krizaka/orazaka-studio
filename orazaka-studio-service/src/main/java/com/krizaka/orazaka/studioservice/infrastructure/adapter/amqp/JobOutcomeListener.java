@@ -39,7 +39,10 @@ class JobOutcomeListener {
    * @param event the outcome
    * @param messageId the broker message id, used to claim the delivery exactly once
    */
-  @RabbitListener(queues = "orazaka.events.studio")
+  @RabbitListener(
+      id = "studio-job-outcome",
+      queues = "orazaka.events.studio",
+      containerFactory = "studioOutcomeListenerContainerFactory")
   public void onJobOutcome(
       JobOutcomeEvent event,
       @Header(name = AmqpHeaders.MESSAGE_ID, required = false) String messageId) {
@@ -80,7 +83,10 @@ class JobOutcomeListener {
    *
    * @param event the outcome that repeatedly failed to apply
    */
-  @RabbitListener(queues = "orazaka.events.studio.dlq")
+  @RabbitListener(
+      id = "studio-job-outcome-dlq",
+      queues = "orazaka.events.studio.dlq",
+      containerFactory = "studioOutcomeListenerContainerFactory")
   public void onDeadLetter(JobOutcomeEvent event) {
     logger.error(
         "Job outcome dead-lettered for job {} — a run may be stranded until the sweeper closes it",

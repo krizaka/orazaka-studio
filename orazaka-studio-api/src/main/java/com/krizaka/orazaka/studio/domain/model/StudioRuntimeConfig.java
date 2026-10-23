@@ -5,12 +5,7 @@ import java.util.Objects;
 
 /** The typed value and operator-editable bounds of one Studio runtime setting. */
 public record StudioRuntimeConfig(
-    String key,
-    Object value,
-    String type,
-    String description,
-    Object defaultValue,
-    Bounds bounds) {
+    String key, Object value, String type, String description, Object defaultValue, Bounds bounds) {
 
   public StudioRuntimeConfig {
     if (key == null || key.isBlank()) {

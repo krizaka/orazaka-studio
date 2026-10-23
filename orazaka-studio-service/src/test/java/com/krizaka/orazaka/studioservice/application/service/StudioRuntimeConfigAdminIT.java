@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.krizaka.orazaka.studio.domain.model.StudioRuntimeConfig;
 import com.krizaka.orazaka.test.architecture.SqlBoundaryRules;
-import com.krizaka.orazaka.test.container.ServiceRoles;
+import com.krizaka.test.container.ServiceRoles;
 import com.zaxxer.hikari.HikariDataSource;
 import java.nio.file.Path;
 import java.util.List;
@@ -89,7 +89,7 @@ class StudioRuntimeConfigAdminIT {
     List<StudioRuntimeConfig> all = service.all();
 
     assertThat(all)
-        .filteredOn(config -> config.key().equals("run.fan-out-max"))
+        .filteredOn(config -> "run.fan-out-max".equals(config.key()))
         .singleElement()
         .satisfies(
             config -> {
@@ -99,11 +99,13 @@ class StudioRuntimeConfigAdminIT {
               assertThat(config.bounds().maximum()).isEqualTo(1000);
             });
     assertThat(all)
-        .filteredOn(config -> config.key().equals("run.result-cache.studios"))
+        .filteredOn(config -> "run.result-cache.studios".equals(config.key()))
         .singleElement()
         .satisfies(
             config -> {
-              assertThat(config.value()).isEqualTo(List.of());
+              // The seeded default, not the live value: another test of this class edits the list,
+              // and the order of tests is not part of the contract.
+              assertThat(config.defaultValue()).isEqualTo(List.of());
               assertThat(config.bounds().maxItems()).isEqualTo(100);
             });
   }
@@ -128,12 +130,12 @@ class StudioRuntimeConfigAdminIT {
     assertThatThrownBy(
             () -> service.update("run.fan-out-max", JSON.readTree("\"many\""), "admin-1"))
         .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(
-            () -> service.update("run.fan-out-max", JSON.readTree("1001"), "admin-1"))
+    assertThatThrownBy(() -> service.update("run.fan-out-max", JSON.readTree("1001"), "admin-1"))
         .isInstanceOf(IllegalArgumentException.class);
 
     assertThat(service.intValue("run.fan-out-max", 10)).isEqualTo(10);
-    assertThat(jdbc.queryForObject("SELECT count(*) FROM studio_runtime_config_audit", Integer.class))
+    assertThat(
+            jdbc.queryForObject("SELECT count(*) FROM studio_runtime_config_audit", Integer.class))
         .isZero();
   }
 
@@ -144,14 +146,12 @@ class StudioRuntimeConfigAdminIT {
     service.update("run.result-cache.studios", JSON.readTree("[\"image-generation\"]"), "admin-1");
 
     assertThat(service.all())
-        .filteredOn(config -> config.key().equals("marketplace.third-party-enabled"))
+        .filteredOn(config -> "marketplace.third-party-enabled".equals(config.key()))
         .singleElement()
         .satisfies(config -> assertThat(config.value()).isEqualTo(true));
-    assertThat(service.listValue("run.result-cache.studios"))
-        .containsExactly("image-generation");
+    assertThat(service.listValue("run.result-cache.studios")).containsExactly("image-generation");
     assertThat(
-            jdbc.queryForObject(
-                "SELECT count(*) FROM studio_runtime_config_audit", Integer.class))
+            jdbc.queryForObject("SELECT count(*) FROM studio_runtime_config_audit", Integer.class))
         .isEqualTo(2);
   }
 
@@ -163,10 +163,7 @@ class StudioRuntimeConfigAdminIT {
             .collect(java.util.stream.Collectors.joining(",", "[", "]"));
     assertThatThrownBy(
             () ->
-                service.update(
-                    "run.result-cache.studios",
-                    JSON.readTree(tooManyItems),
-                    "admin-1"))
+                service.update("run.result-cache.studios", JSON.readTree(tooManyItems), "admin-1"))
         .isInstanceOf(IllegalArgumentException.class);
   }
 }

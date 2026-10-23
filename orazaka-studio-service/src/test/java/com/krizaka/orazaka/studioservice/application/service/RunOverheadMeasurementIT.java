@@ -149,9 +149,7 @@ class RunOverheadMeasurementIT {
             .install(STUDIO_KEY, ACTOR, Map.of(), "fr")
             .id();
     jdbcTemplate.update(
-        "INSERT INTO studio_runtime_config (config_key, config_value, value_type)"
-            + " VALUES ('run.fan-out-max', '20', 'int')"
-            + " ON CONFLICT (config_key) DO UPDATE SET config_value = EXCLUDED.config_value");
+        "UPDATE studio_runtime_config SET config_value = '20' WHERE config_key = 'run.fan-out-max'");
     hotPathInstallationId =
         context
             .getBean(StudioInstallationService.class)

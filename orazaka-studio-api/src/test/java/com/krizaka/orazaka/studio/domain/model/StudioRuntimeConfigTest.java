@@ -1,7 +1,7 @@
 package com.krizaka.orazaka.studio.domain.model;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -23,21 +23,21 @@ class StudioRuntimeConfigTest {
 
     studios.add("video");
 
-    assertThat(config.value()).isEqualTo(List.of("image"));
-    assertThat(config.bounds().maxItems()).isEqualTo(20);
+    assertEquals(List.of("image"), config.value());
+    assertEquals(20, config.bounds().maxItems());
   }
 
   @Test
   void anIntegerSettingRequiresNumericBounds() {
-    assertThatIllegalArgumentException()
-        .isThrownBy(
-            () ->
-                new StudioRuntimeConfig(
-                    "run.fan-out-max",
-                    10,
-                    "int",
-                    "Fan-out cap",
-                    10,
-                    new StudioRuntimeConfig.Bounds(null, null, null)));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new StudioRuntimeConfig(
+                "run.fan-out-max",
+                10,
+                "int",
+                "Fan-out cap",
+                10,
+                new StudioRuntimeConfig.Bounds(null, null, null)));
   }
 }

@@ -160,7 +160,8 @@ public class StudioRuntimeConfigService {
         }
         yield String.join(",", items);
       }
-      default -> throw new IllegalStateException("unsupported runtime config type: " + config.type());
+      default ->
+          throw new IllegalStateException("unsupported runtime config type: " + config.type());
     };
   }
 

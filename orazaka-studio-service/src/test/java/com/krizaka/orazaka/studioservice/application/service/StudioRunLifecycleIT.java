@@ -752,8 +752,8 @@ class StudioRunLifecycleIT {
 
     // The second photo's description comes back first: the step after must still read them in
     // the order of the photos, because the ordinal, not the arrival, is the order.
-    sagaService.applyOutcome(fanOut.get(1), Map.of("content", "Salle de bain"), null);
-    sagaService.applyOutcome(fanOut.get(0), Map.of("content", "Cuisine refaite"), null);
+    sagaService.applyOutcome(fanOut.getLast(), Map.of("content", "Salle de bain"), null);
+    sagaService.applyOutcome(fanOut.getFirst(), Map.of("content", "Cuisine refaite"), null);
 
     assertTrue(
         String.valueOf(executor.lastInputs.get("prompt"))

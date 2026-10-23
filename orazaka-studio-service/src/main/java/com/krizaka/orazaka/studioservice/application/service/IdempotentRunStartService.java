@@ -2,22 +2,15 @@ package com.krizaka.orazaka.studioservice.application.service;
 
 import com.krizaka.orazaka.studioservice.domain.exception.IdempotencyKeyReusedException;
 import com.krizaka.orazaka.studioservice.domain.exception.RunNotFoundException;
+import com.krizaka.orazaka.studioservice.domain.model.RequestFingerprint;
 import com.krizaka.orazaka.studioservice.domain.model.RunDetail;
 import com.krizaka.orazaka.studioservice.domain.port.RunIdempotencyStore;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HexFormat;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import tools.jackson.databind.ObjectMapper;
 
 /**
  * Starts a run at most once per {@code Idempotency-Key} (ADR-083).
@@ -38,7 +31,6 @@ public class IdempotentRunStartService {
 
   private final RunIdempotencyStore store;
   private final StudioRunService runs;
-  private final ObjectMapper json = new ObjectMapper();
 
   public IdempotentRunStartService(RunIdempotencyStore store, StudioRunService runs) {
     this.store = Objects.requireNonNull(store, "RunIdempotencyStore cannot be null");
@@ -98,48 +90,6 @@ public class IdempotentRunStartService {
 
   /** SHA-256 of the request in canonical form: the order of the fields is not a difference. */
   String fingerprint(String scope, Map<String, Object> inputs) {
-    StringBuilder canonical = new StringBuilder();
-    canonical.append(json.writeValueAsString(scope)).append('|');
-    canonical(inputs == null ? Map.of() : inputs, canonical);
-    try {
-      return HexFormat.of()
-          .formatHex(
-              MessageDigest.getInstance("SHA-256")
-                  .digest(canonical.toString().getBytes(StandardCharsets.UTF_8)));
-    } catch (NoSuchAlgorithmException e) {
-      throw new IllegalStateException(e);
-    }
-  }
-
-  private void canonical(Object value, StringBuilder out) {
-    switch (value) {
-      case Map<?, ?> map -> {
-        List<String> keys = new ArrayList<>();
-        map.keySet().forEach(k -> keys.add(String.valueOf(k)));
-        keys.sort(null);
-        out.append('{');
-        for (int i = 0; i < keys.size(); i++) {
-          if (i > 0) {
-            out.append(',');
-          }
-          out.append(json.writeValueAsString(keys.get(i))).append(':');
-          canonical(map.get(keys.get(i)), out);
-        }
-        out.append('}');
-      }
-      case Collection<?> items -> {
-        out.append('[');
-        boolean first = true;
-        for (Object item : items) {
-          if (!first) {
-            out.append(',');
-          }
-          first = false;
-          canonical(item, out);
-        }
-        out.append(']');
-      }
-      case null, default -> out.append(json.writeValueAsString(value));
-    }
+    return RequestFingerprint.of(scope, inputs);
   }
 }

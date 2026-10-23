@@ -770,6 +770,59 @@ class StudioRunLifecycleIT {
   }
 
   @Test
+  @DisplayName(
+      "[studio#61] an identical run answers from the recorded result: no hold, no dispatch")
+  void anIdenticalRunAnswersFromTheRecordedResult() {
+    jdbcTemplate.update(
+        "INSERT INTO studio_runtime_config (config_key, config_value, value_type)"
+            + " VALUES ('run.result-cache.studios', ?, 'list')"
+            + " ON CONFLICT (config_key) DO UPDATE SET config_value = EXCLUDED.config_value",
+        STUDIO_KEY);
+    try {
+      UUID installation = install();
+      Map<String, Object> inputs = Map.of("photos", List.of("p1"), "trade", "plombier");
+      RunDetail first = runService.start(installation, ACTOR, inputs);
+      List.copyOf(executor.dispatched)
+          .forEach(
+              job ->
+                  sagaService.applyOutcome(
+                      job,
+                      Map.of("analysis", "Cuisine", "content", "ok", "url", "/media/img-1.png"),
+                      null));
+      List.copyOf(executor.dispatched).stream()
+          .forEach(
+              job ->
+                  sagaService.applyOutcome(
+                      job, Map.of("content", "ok", "url", "/media/img-1.png"), null));
+      assertEquals(RunStatus.SUCCEEDED, runService.find(first.id(), ACTOR).orElseThrow().status());
+      int dispatched = executor.dispatched.size();
+      int holds = credits.holds;
+
+      RunDetail again =
+          runService.start(
+              installation, ACTOR, Map.of("trade", "plombier", "photos", List.of("p1")));
+
+      assertEquals(RunStatus.SUCCEEDED, again.status(), "answered at once");
+      assertEquals(first.id(), again.cachedFrom(), "and it names the run that computed it");
+      assertEquals(dispatched, executor.dispatched.size(), "no step was dispatched");
+      assertEquals(holds, credits.holds, "no credit was held");
+      assertEquals(
+          runService.find(first.id(), ACTOR).orElseThrow().outputs(),
+          again.outputs(),
+          "the recorded result, as it was");
+
+      RunDetail changed =
+          runService.start(
+              installation, ACTOR, Map.of("photos", List.of("p2"), "trade", "plombier"));
+      assertEquals(RunStatus.RUNNING, changed.status(), "another document computes");
+      assertNull(changed.cachedFrom());
+    } finally {
+      jdbcTemplate.update(
+          "DELETE FROM studio_runtime_config WHERE config_key = 'run.result-cache.studios'");
+    }
+  }
+
+  @Test
   @DisplayName("A RETRY step is re-submitted rather than failing the run on its first stumble")
   void retryStepIsResubmitted() {
     RunDetail run = startRun();
@@ -1266,7 +1319,8 @@ class StudioRunLifecycleIT {
         RunAuditService runAuditService,
         StudioCatalogService catalogService,
         StudioAccessService accessService,
-        ContentPolicyService contentPolicy) {
+        ContentPolicyService contentPolicy,
+        com.krizaka.orazaka.studioservice.domain.port.RunResultCache resultCache) {
       return new StudioRunService(
           jdbcTemplate,
           installationService,
@@ -1282,7 +1336,8 @@ class StudioRunLifecycleIT {
           catalogService,
           accessService,
           contentPolicy,
-          new FormSchemaService(category -> java.util.Optional.empty(), objectMapper));
+          new FormSchemaService(category -> java.util.Optional.empty(), objectMapper),
+          resultCache);
     }
 
     @Bean

@@ -42,6 +42,29 @@ public class StudioRuntimeConfigService {
         .orElse(defaultValue);
   }
 
+  /**
+   * Reads a comma-separated list (Studio keys, for instance).
+   *
+   * @param key the config key
+   * @return its trimmed, non-empty items; empty when the row is absent
+   */
+  public java.util.Set<String> listValue(String key) {
+    return jdbcTemplate
+        .query(
+            "SELECT config_value FROM studio_runtime_config WHERE config_key = ?",
+            (rs, rowNum) -> rs.getString("config_value"),
+            key)
+        .stream()
+        .findFirst()
+        .map(
+            raw ->
+                java.util.Arrays.stream(raw.split(","))
+                    .map(String::trim)
+                    .filter(item -> !item.isEmpty())
+                    .collect(java.util.stream.Collectors.toUnmodifiableSet()))
+        .orElse(java.util.Set.of());
+  }
+
   private static int parse(String raw, int defaultValue) {
     try {
       return Integer.parseInt(raw.trim());

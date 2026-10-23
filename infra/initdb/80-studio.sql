@@ -294,6 +294,11 @@ CREATE TABLE studio_run (
     -- callers send none); the key lives and dies with the run, so retention needs no second sweep.
     idempotency_key     VARCHAR(255),
     request_fingerprint VARCHAR(64),
+    -- orazaka-studio#61. The fingerprint of what was asked (inputs and the installation's configuration, for this
+    -- Studio version), on every run; and, on a run answered from the exact result cache, the run whose result it
+    -- copies. A cached run is never a source: every answer names the run that really computed it.
+    input_fingerprint VARCHAR(64),
+    cached_from       UUID,
     started_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
     finished_at       TIMESTAMPTZ,
     CONSTRAINT ck_run_data_class CHECK (data_class IN ('STANDARD','SENSITIVE','REGULATED')),
@@ -304,6 +309,9 @@ CREATE TABLE studio_run (
     CONSTRAINT ck_run_uninstalled_not_regulated
         CHECK (installation_id IS NOT NULL OR data_class <> 'REGULATED')
 );
+-- The exact result cache's lookup: one actor, one Studio version, one request, an original success.
+CREATE INDEX idx_studio_run_result_cache ON studio_run (actor_id, studio_key, blueprint_version, input_fingerprint)
+    WHERE status = 'SUCCEEDED' AND cached_from IS NULL;
 -- The sweeper's second window and the analytics exclusion both filter on this.
 CREATE INDEX idx_run_data_class ON studio_run(data_class, finished_at) WHERE data_class <> 'STANDARD';
 CREATE INDEX idx_studio_run_failure_cause ON studio_run(failure_cause) WHERE failure_cause IS NOT NULL;
@@ -507,6 +515,7 @@ CREATE TRIGGER trg_content_policy_audit_immutable
 -- ON CONFLICT DO NOTHING rather than a reapplied file.
 INSERT INTO studio_runtime_config (config_key, config_value, value_type, description) VALUES
  ('run.max-concurrent-per-actor',    '2',     'int',     'Concurrent runs one actor may hold.'),
+ ('run.result-cache.studios',        '',      'list',    'Studios whose identical runs (same actor, version, inputs, configuration) answer from the recorded result, with no hold and no model call (orazaka-studio#61). Deterministic Studios only; empty = off.'),
  ('run.max-seconds',                 '14400', 'int',     'Longest a run may stay in flight (RUNNING) before the sweeper fails it and frees its hold and its slot.'),
  ('run.concurrency-retry-seconds',    '15',    'int',     'Retry-After (seconds) of the 429 answered when an actor holds its concurrent runs.'),
  ('run.max-streams-per-actor',      '5',     'int',     'Run event streams (SSE) one actor may hold open per instance.'),

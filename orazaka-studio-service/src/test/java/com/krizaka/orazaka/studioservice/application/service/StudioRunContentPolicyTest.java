@@ -105,7 +105,8 @@ class StudioRunContentPolicyTest {
             catalog,
             access,
             policy,
-            passthroughFormSchema());
+            passthroughFormSchema(),
+            (a, s, v, f) -> java.util.Optional.empty());
   }
 
   private static Map<String, Object> inputs(String fixture) {

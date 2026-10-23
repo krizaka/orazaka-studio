@@ -68,6 +68,7 @@ class RunOverheadMeasurementIT {
   private static final String STUDIO_PASSWORD = "orazaka_studio_pass";
   private static final String ACTOR = "550e8400-e29b-41d4-a716-446655440002";
   private static final String STUDIO_KEY = "m0-single-step";
+  private static final String HOT_PATH_STUDIO_KEY = "m1-hot-path";
   private static final String VERSION = "1.0.0";
 
   private static final String DEFINITION =
@@ -81,6 +82,25 @@ class RunOverheadMeasurementIT {
   private static final String INPUT_SCHEMA =
       "{\"type\":\"object\",\"required\":[\"prompt\"],"
           + "\"properties\":{\"prompt\":{\"type\":\"string\"}}}";
+  private static final String HOT_PATH_DEFINITION =
+      """
+      {"studioKey":"m1-hot-path","version":"1.0.0","steps":[
+       {"id":"stage1","kind":"CAPABILITY","featureKey":"orazaka.core.media.image","dependsOn":[],
+        "inputs":{"prompt":"{{item}}"},"forEach":"{{inputs.photos}}","out":"stage1",
+        "onError":"FAIL","maxAttempts":1,"timeout":"PT2M"},
+       {"id":"stage2","kind":"CAPABILITY","featureKey":"orazaka.core.media.image","dependsOn":["stage1"],
+        "inputs":{"prompt":"{{inputs.photos}}"},"out":"stage2","onError":"FAIL","maxAttempts":1,"timeout":"PT2M"},
+       {"id":"stage3","kind":"CAPABILITY","featureKey":"orazaka.core.media.image","dependsOn":["stage2"],
+        "inputs":{"prompt":"{{inputs.photos}}"},"out":"stage3","onError":"FAIL","maxAttempts":1,"timeout":"PT2M"},
+       {"id":"stage4","kind":"CAPABILITY","featureKey":"orazaka.core.media.image","dependsOn":["stage3"],
+        "inputs":{"prompt":"{{inputs.photos}}"},"out":"stage4","onError":"FAIL","maxAttempts":1,"timeout":"PT2M"},
+       {"id":"stage5","kind":"CAPABILITY","featureKey":"orazaka.core.media.image","dependsOn":["stage4"],
+        "inputs":{"prompt":"{{inputs.photos}}"},"out":"stage5","onError":"FAIL","maxAttempts":1,"timeout":"PT2M"}],
+       "outputs":[{"key":"result","label":"Result","from":"{{steps.stage5.url}}","type":"IMAGE"}]}
+      """;
+  private static final String HOT_PATH_INPUT_SCHEMA =
+      "{\"type\":\"object\",\"required\":[\"photos\"],"
+          + "\"properties\":{\"photos\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}}}";
 
   @SuppressWarnings("resource")
   private static final PostgreSQLContainer<?> POSTGRES =
@@ -102,6 +122,7 @@ class RunOverheadMeasurementIT {
   private static TimingStepExecutionClient executor;
   private static CountingDataSource counter;
   private static UUID installationId;
+  private static UUID hotPathInstallationId;
 
   @BeforeAll
   static void startContainer() {
@@ -119,10 +140,20 @@ class RunOverheadMeasurementIT {
             context.getBean(StudioRunLifecycleIT.RecordingStepExecutionClient.class);
     counter = (CountingDataSource) context.getBean(DataSource.class);
     seedSingleStepStudio();
+    seedHotPathStudio();
     installationId =
         context
             .getBean(StudioInstallationService.class)
             .install(STUDIO_KEY, ACTOR, Map.of(), "fr")
+            .id();
+    jdbcTemplate.update(
+        "INSERT INTO studio_runtime_config (config_key, config_value, value_type)"
+            + " VALUES ('run.fan-out-max', '20', 'int')"
+            + " ON CONFLICT (config_key) DO UPDATE SET config_value = EXCLUDED.config_value");
+    hotPathInstallationId =
+        context
+            .getBean(StudioInstallationService.class)
+            .install(HOT_PATH_STUDIO_KEY, ACTOR, Map.of(), "fr")
             .id();
   }
 
@@ -152,6 +183,26 @@ class RunOverheadMeasurementIT {
         VERSION,
         DEFINITION,
         INPUT_SCHEMA);
+  }
+
+  private static void seedHotPathStudio() {
+    jdbcTemplate.update(
+        "INSERT INTO studio (studio_key, label, tagline, profession, icon_key, pricing,"
+            + " entitlement_key, status, publisher_id, latest_version, sort_weight)"
+            + " VALUES (?, 'M1', 'Saga hot path', 'measurement', 'studio', 'FREE', ?, 'PUBLISHED',"
+            + " 'orazaka', ?, 1) ON CONFLICT (studio_key) DO NOTHING",
+        HOT_PATH_STUDIO_KEY,
+        "studio." + HOT_PATH_STUDIO_KEY,
+        VERSION);
+    jdbcTemplate.update(
+        "INSERT INTO studio_blueprint (studio_key, version, status, definition, input_schema,"
+            + " config_schema, estimated_credits, changelog, published_at, created_by)"
+            + " VALUES (?, ?, 'PUBLISHED', ?::jsonb, ?::jsonb, '{}'::jsonb, 5, 'm1', now(),"
+            + " 'system') ON CONFLICT (studio_key, version) DO NOTHING",
+        HOT_PATH_STUDIO_KEY,
+        VERSION,
+        HOT_PATH_DEFINITION,
+        HOT_PATH_INPUT_SCHEMA);
   }
 
   /** One sample: door 2's segment A, then its segment B, with the run left terminal. */
@@ -203,6 +254,96 @@ class RunOverheadMeasurementIT {
     assertTrue(!segmentA.isEmpty() && !segmentB.isEmpty(), "the counter recorded nothing");
 
     write(samples, segmentA, segmentB);
+  }
+
+  @Test
+  @DisplayName("[M1] measure five steps with a 20-item fan-out before and after saga tuning")
+  void measureFiveStepFanOut() {
+    List<Long> outcomeMicros = new ArrayList<>();
+    List<String> queryCounts = new ArrayList<>();
+    int warmups = 10;
+    int samples = 50;
+    List<String> photos = java.util.stream.IntStream.range(0, 20).mapToObj(i -> "photo-" + i).toList();
+
+    for (int sample = 0; sample < warmups + samples; sample++) {
+      RunDetail run = runService.start(hotPathInstallationId, ACTOR, Map.of("photos", photos));
+      List<String> fanOutJobs =
+          jdbcTemplate.queryForList(
+              "SELECT job_id FROM studio_run_step WHERE run_id = ? AND step_id = 'stage1'"
+                  + " ORDER BY ordinal",
+              String.class,
+              run.id());
+      assertEquals(20, fanOutJobs.size(), "the first stage must fan out to 20 jobs");
+
+      for (int i = 0; i < fanOutJobs.size(); i++) {
+        boolean record = sample == warmups && (i == 0 || i == fanOutJobs.size() - 1);
+        if (record) {
+          counter.begin();
+        }
+        long started = System.nanoTime();
+        sagaService.applyOutcome(fanOutJobs.get(i), Map.of("url", "/media/m1.png"), null);
+        long elapsed = System.nanoTime() - started;
+        if (sample >= warmups) {
+          outcomeMicros.add(elapsed / 1000);
+        }
+        if (record) {
+          queryCounts.add(
+              "stage1-" + (i == 0 ? "intermediate" : "last") + "|" + counter.end().size());
+        }
+      }
+
+      for (int stage = 2; stage <= 5; stage++) {
+        String stepId = "stage" + stage;
+        String jobId =
+            jdbcTemplate.queryForObject(
+                "SELECT job_id FROM studio_run_step WHERE run_id = ? AND step_id = ?",
+                String.class,
+                run.id(),
+                stepId);
+        boolean record = sample == warmups && stage == 5;
+        if (record) {
+          counter.begin();
+        }
+        long started = System.nanoTime();
+        sagaService.applyOutcome(jobId, Map.of("url", "/media/m1.png"), null);
+        long elapsed = System.nanoTime() - started;
+        if (sample >= warmups) {
+          outcomeMicros.add(elapsed / 1000);
+        }
+        if (record) {
+          queryCounts.add("stage5-terminal|" + counter.end().size());
+        }
+      }
+    }
+
+    List<Long> ordered = outcomeMicros.stream().sorted().toList();
+    long p95 = ordered.get((int) Math.ceil(ordered.size() * 0.95) - 1);
+    String result =
+        "samples="
+            + samples
+            + ", outcomes="
+            + outcomeMicros.size()
+            + ", p95_advance_us="
+            + p95
+            + ", query_counts="
+            + queryCounts;
+    System.out.println("[M1] " + result);
+    writeHotPathMeasurement(result, outcomeMicros);
+  }
+
+  private static void writeHotPathMeasurement(String summary, List<Long> outcomeMicros) {
+    StringBuilder out = new StringBuilder("# M1 five-step / fan-out-20 measurement\n");
+    out.append(summary).append('\n');
+    out.append("# outcome_advance_us\n");
+    outcomeMicros.forEach(micros -> out.append(micros).append('\n'));
+    Path target = Path.of("target", "m1-saga-hot-path.txt");
+    try {
+      Files.createDirectories(target.getParent());
+      Files.writeString(target, out.toString());
+    } catch (IOException unwritable) {
+      throw new UncheckedIOException("cannot write " + target, unwritable);
+    }
+    System.out.println("M1 raw samples written to " + target.toAbsolutePath());
   }
 
   /**

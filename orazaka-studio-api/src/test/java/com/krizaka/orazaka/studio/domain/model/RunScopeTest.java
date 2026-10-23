@@ -290,6 +290,46 @@ class RunScopeTest {
     assertEquals("Cuisine refaite\nSalle de bain", scope.resolve("{{steps.descriptions}}"));
   }
 
+  // ── A field over a fan-out (orazaka-studio#60) ─────────────────────────────
+
+  /** What a fan-out step really publishes: one envelope per item, its text beside its metadata. */
+  private static RunScope briefs(Object... results) {
+    return new RunScope(
+        Map.of(), Map.of(), Map.of("briefs", java.util.List.of(results)), null, Map.of());
+  }
+
+  private static Map<String, Object> envelope(String content) {
+    return Map.of("content", content, "metadata", Map.of("provider", "ollama", "durationMs", 812));
+  }
+
+  @Test
+  void aFieldOverAFanOut_isThatFieldOfEveryResult_inOrder_withoutTheEnvelope() {
+    RunScope scope = briefs(envelope("Fiche Alpha"), envelope("Fiche Beta"));
+
+    // The bug of orazaka-packs#5: the bare output rendered « content: …, metadata: provider: … ».
+    assertTrue(scope.resolve("{{steps.briefs}}").contains("metadata"));
+    assertEquals("Fiche Alpha\nFiche Beta", scope.resolve("{{steps.briefs.content}}"));
+    assertEquals(
+        java.util.List.of("Fiche Alpha", "Fiche Beta"),
+        scope.resolveValue("{{steps.briefs.content}}"),
+        "a step input receives the list itself");
+  }
+
+  @Test
+  void aFieldOverAFanOut_leavesOutTheResultsThatDoNotCarryIt() {
+    RunScope scope = briefs(envelope("Fiche Alpha"), Map.of("metadata", Map.of()), "a scalar");
+
+    assertEquals("Fiche Alpha", scope.resolve("{{steps.briefs.content}}"));
+  }
+
+  @Test
+  void aFieldNoResultCarries_isAbsent_soItsDefaultAppliesAndItsConditionHolds() {
+    RunScope scope = briefs(Map.of("metadata", Map.of()));
+
+    assertEquals("aucune fiche", scope.resolve("{{steps.briefs.content:aucune fiche}}"));
+    assertTrue(scope.matches("{{steps.briefs.content}} is null"));
+  }
+
   @Test
   void rendersASingleFieldStepOutputAsItsValue() {
     RunScope scope =

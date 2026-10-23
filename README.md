@@ -34,7 +34,7 @@ part of the [Orazaka platform](https://github.com/krizaka/orazaka) by [Krizaka](
 | Studios & blueprints (semver'd DAGs) | `/api/v1/studios` · `/api/v1/studios/{key}/blueprints` |
 | Installations | `/api/v1/studios/{key}/installations` |
 | Runs (saga, approvals, cancel) | `/api/v1/studios/runs` |
-| Admin runtime settings | `GET /api/v1/studios/admin/runtime-config` · `PUT /api/v1/studios/admin/runtime-config/{key}` |
+| Admin runtime settings | `GET /api/v1/studios/admin/runtime-config` · `PUT /api/v1/studios/admin/runtime-config/{key}` · `GET /api/v1/studios/admin/runtime-config/audit?key=&limit=` |
 
 | Module | Role |
 |:---|:---|
@@ -95,7 +95,7 @@ Content-Type: application/json
 {"value": 12}
 ```
 
-Updates are audited with the administrator id and before/after values. Runtime reads query the
+Updates are audited with the administrator id and before/after values; `GET …/runtime-config/audit` reads them back, newest first (one setting with `key`, at most 200). Runtime reads query the
 database directly, so a successful update is effective on the next run without a service restart.
 
 A fresh database receives the schema and bounds from `infra/initdb/80-studio.sql`. An existing one (dev)

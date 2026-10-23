@@ -112,6 +112,7 @@ class RunEventServiceTest {
         Instant.EPOCH,
         null,
         null,
+        null,
         null);
   }
 
@@ -306,6 +307,7 @@ class RunEventServiceTest {
         null,
         null,
         Instant.EPOCH,
+        null,
         null,
         null,
         null);

@@ -23,6 +23,8 @@ import java.util.UUID;
  * @param startedAt when it was accepted
  * @param finishedAt when it ended, {@code null} while running
  * @param steps the per-node states
+ * @param cachedFrom the run whose recorded result this one answers with, or {@code null}
+ * @param resumedFrom the run this one resumes from a step, or {@code null}
  */
 public record RunResponse(
     UUID id,
@@ -34,7 +36,9 @@ public record RunResponse(
     String errorMessage,
     Instant startedAt,
     Instant finishedAt,
-    List<RunStepResponse> steps) {
+    List<RunStepResponse> steps,
+    UUID cachedFrom,
+    UUID resumedFrom) {
 
   /**
    * Projects a run onto the wire.
@@ -53,6 +57,8 @@ public record RunResponse(
         run.errorMessage(),
         run.startedAt(),
         run.finishedAt(),
-        run.steps().stream().map(RunStepResponse::from).toList());
+        run.steps().stream().map(RunStepResponse::from).toList(),
+        run.cachedFrom(),
+        run.resumedFrom());
   }
 }

@@ -26,6 +26,7 @@ import java.util.UUID;
  * @param steps the per-node states; empty in a history listing
  * @param cachedFrom the run whose recorded result this one answers with (orazaka-studio#61), or
  *     {@code null} when it computed its own
+ * @param resumedFrom the run this one resumes from a step (orazaka-studio#63), or {@code null}
  */
 public record RunDetail(
     UUID id,
@@ -39,7 +40,8 @@ public record RunDetail(
     Instant startedAt,
     Instant finishedAt,
     List<RunStepView> steps,
-    UUID cachedFrom) {
+    UUID cachedFrom,
+    UUID resumedFrom) {
 
   /** Compact canonical constructor enforcing the contract's invariants (ERR-106). */
   public RunDetail {
@@ -69,7 +71,8 @@ public record RunDetail(
         startedAt,
         finishedAt,
         steps,
-        cachedFrom);
+        cachedFrom,
+        resumedFrom);
   }
 
   /**
@@ -91,6 +94,7 @@ public record RunDetail(
         startedAt,
         finishedAt,
         loaded,
-        cachedFrom);
+        cachedFrom,
+        resumedFrom);
   }
 }

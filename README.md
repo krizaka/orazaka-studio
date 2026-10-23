@@ -70,6 +70,16 @@ GitHub Packages (`https://maven.pkg.github.com/krizaka/<repository>`, see the
 
 Requirements: JDK 21, Docker (Testcontainers integration tests).
 
+## Saga runtime controls
+
+Published blueprint versions are cached per service instance; the live `run.blueprint-cache-size`
+row in `studio_runtime_config` bounds the cache (`0` disables it). The same table controls
+`run.outcome-listener.concurrency`; changes are applied while the service is running, and outcome
+consumers run on virtual threads. Step state, failure cause, and output rows are read together for
+each advance. The five-step/20-item fan-out benchmark is `RunOverheadMeasurementIT` and writes its
+latencies, JFR profile, and `EXPLAIN ANALYZE` plans for the job lookup and step snapshot to
+`target/m1-saga-hot-path.txt` and `target/m1-saga-hot-path.jfr`.
+
 ## Governance
 
 This repository follows the Orazaka governance contract — [AGENTS.md](https://github.com/krizaka/orazaka/blob/main/AGENTS.md)

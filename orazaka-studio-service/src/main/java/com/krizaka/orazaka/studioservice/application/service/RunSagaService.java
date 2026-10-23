@@ -8,6 +8,7 @@ import com.krizaka.orazaka.jobs.domain.model.FailureCause;
 import com.krizaka.orazaka.jobs.domain.port.CapabilityRoutingClient;
 import com.krizaka.orazaka.studio.domain.model.Blueprint;
 import com.krizaka.orazaka.studio.domain.model.BlueprintOutput;
+import com.krizaka.orazaka.studio.domain.model.BlueprintStatus;
 import com.krizaka.orazaka.studio.domain.model.BlueprintStep;
 import com.krizaka.orazaka.studio.domain.model.ErrorPolicy;
 import com.krizaka.orazaka.studio.domain.model.RunScope;
@@ -55,6 +56,9 @@ public class RunSagaService {
 
   private static final int FAN_OUT_MAX_FALLBACK = 10;
 
+  private static final String BLUEPRINT_CACHE_SIZE_KEY = "run.blueprint-cache-size";
+  private static final int BLUEPRINT_CACHE_SIZE_FALLBACK = 100;
+
   /**
    * What a producer sends when it chose no model. Mirrored from {@code JobCommand}: it is a
    * sentinel, not a model name, and passing it to the pricebook looks for a row called "default"
@@ -79,6 +83,9 @@ public class RunSagaService {
    * by advancing it here, so each needs the other and only a late lookup breaks the circle.
    */
   private final ObjectProvider<StudioRunService> runs;
+
+  private final Map<BlueprintKey, Blueprint> publishedBlueprints =
+      new LinkedHashMap<>(16, 0.75f, true);
 
   /**
    * Tells the executor of a step to stop (a cancelled run).
@@ -168,6 +175,14 @@ public class RunSagaService {
       return;
     }
     StepRef ref = located.get();
+    // Read with the step, before the mark below takes the run's row lock (the event_seq trigger).
+    // It cannot be stale in a way that matters: every path that ends a run (fail, cancel, sweep)
+    // also moves its RUNNING steps out of RUNNING, so a run ended meanwhile makes the guarded
+    // UPDATE below apply nothing, and this outcome returns before reading the run again.
+    RunRow run = ref.run();
+    Blueprint blueprint =
+        findBlueprint(run.studioKey(), run.blueprintVersion(), ref.blueprintCacheSize())
+            .orElse(null);
 
     String failure = error;
     FailureCause declared = cause;
@@ -176,7 +191,7 @@ public class RunSagaService {
       // A step that declares its output's shape is not SUCCEEDED on an output outside it
       // (orazaka-studio#59): it fails as the executor's fault, its own retry policy applies, and
       // the steps after it never consume a hollow result. Path and rule only, never the value.
-      Optional<String> broken = contractViolation(ref, output);
+      Optional<String> broken = contractViolation(ref, blueprint, output);
       if (broken.isPresent()) {
         failure = "OUTPUT_INVALID: " + broken.get();
         declared = FailureCause.EXECUTOR_FAULT;
@@ -216,9 +231,9 @@ public class RunSagaService {
       // Put the node back in flight if its policy allows. This is a side-effect, not a branch:
       // the advance below must still run, because some *other* node may already have failed
       // hard, and returning early here would leave that run hanging instead of failing it.
-      resubmitted(ref);
+      resubmitted(ref, run, blueprint);
     }
-    advance(ref.runId());
+    advance(run, blueprint, ref.installationConfig());
   }
 
   /**
@@ -236,13 +251,10 @@ public class RunSagaService {
    * @return whether it was put back in flight; the row returns to {@code RUNNING}, so the caller's
    *     {@code advance} sees it in flight rather than failed and neither fails nor unblocks on it
    */
-  private boolean resubmitted(StepRef ref) {
-    RunRow run = loadRun(ref.runId());
+  private boolean resubmitted(StepRef ref, RunRow run, Blueprint blueprint) {
     if (run == null || isTerminal(run.status())) {
       return false;
     }
-    Blueprint blueprint =
-        blueprintRepository.find(run.studioKey(), run.blueprintVersion()).orElse(null);
     if (blueprint == null) {
       return false;
     }
@@ -266,8 +278,8 @@ public class RunSagaService {
       return false;
     }
 
-    RunScope scope =
-        buildScope(run, blueprint).withItem(itemFor(step, run, blueprint, ref.ordinal()));
+    RunScope base = buildScope(run, blueprint, ref.installationConfig());
+    RunScope scope = base.withItem(itemFor(step, base, ref.ordinal()));
     if (step.kind() == StepKind.STUDIO) {
       return recalled(run, step, ref, scope);
     }
@@ -279,6 +291,8 @@ public class RunSagaService {
 
     String jobId;
     try {
+      StepDeclarationService.DispatchDeclarations stepDeclarations =
+          declarations.forDispatch(run.studioKey(), run.installationId());
       jobId =
           stepExecutionClient.submit(
               new StepDispatch(
@@ -290,10 +304,10 @@ public class RunSagaService {
                   resolved,
                   run.actorId(),
                   run.correlationId(),
-                  effectiveConfig(run, blueprint),
-                  declarations.scopeGuard(run.studioKey()),
-                  declarations.crisisTerms(run.studioKey()),
-                  declarations.crisisResponse(run.studioKey(), run.installationId()),
+                  effectiveConfig(run, blueprint, ref.installationConfig()),
+                  stepDeclarations.scopeGuard(),
+                  stepDeclarations.crisisTerms(),
+                  stepDeclarations.crisisResponse(),
                   declarations.guardSubject(run.inputs()),
                   run.dataClass()));
     } catch (UnroutableCapabilityException e) {
@@ -329,14 +343,13 @@ public class RunSagaService {
    * What the step's output breaks in its declared contract, or nothing — the same {@code
    * OutputContract} the run's outputs are held to (ADR-076), never a second implementation.
    */
-  private Optional<String> contractViolation(StepRef ref, Map<String, Object> output) {
-    RunRow run = loadRun(ref.runId());
-    if (run == null) {
+  private Optional<String> contractViolation(
+      StepRef ref, Blueprint blueprint, Map<String, Object> output) {
+    if (blueprint == null) {
       return Optional.empty();
     }
     Optional<String> contract =
-        blueprintRepository.find(run.studioKey(), run.blueprintVersion()).stream()
-            .flatMap(blueprint -> blueprint.steps().stream())
+        blueprint.steps().stream()
             .filter(step -> step.id().equals(ref.stepId()))
             .map(BlueprintStep::outputContract)
             .filter(Objects::nonNull)
@@ -353,11 +366,11 @@ public class RunSagaService {
   }
 
   /** The fan-out element a given ordinal was dispatched with, so a retry re-renders identically. */
-  private Object itemFor(BlueprintStep step, RunRow run, Blueprint blueprint, int ordinal) {
+  private Object itemFor(BlueprintStep step, RunScope scope, int ordinal) {
     if (step.forEach() == null) {
       return null;
     }
-    List<Object> items = buildScope(run, blueprint).expand(step.forEach());
+    List<Object> items = scope.expand(step.forEach());
     return ordinal < items.size() ? items.get(ordinal) : null;
   }
 
@@ -373,44 +386,61 @@ public class RunSagaService {
       return;
     }
     Blueprint blueprint =
-        blueprintRepository
-            .find(run.studioKey(), run.blueprintVersion())
+        findBlueprint(
+                run.studioKey(),
+                run.blueprintVersion(),
+                runtimeConfigService.intValue(
+                    BLUEPRINT_CACHE_SIZE_KEY, BLUEPRINT_CACHE_SIZE_FALLBACK))
             .orElseThrow(
                 () ->
                     new IllegalStateException(
                         "run " + runId + " pins a version that no longer parses"));
+    advance(run, blueprint, installationConfig(run.installationId()));
+  }
 
-    Map<String, RunStepStatus> states = stepStates(runId);
-    Map<String, FailureCause> causes = stepCauses(runId);
+  private void advance(RunRow run, Blueprint blueprint, Map<String, String> installationConfig) {
+    if (run == null || isTerminal(run.status())) {
+      return;
+    }
+    if (blueprint == null) {
+      throw new IllegalStateException("run " + run.id() + " pins a version that no longer parses");
+    }
+
+    StepSnapshot snapshot = stepSnapshot(run, blueprint);
 
     // A required step that failed ends the run: compensate, settle or release, stop submitting.
     // The policy is resolved AGAINST THE DECLARED CAUSE, so an author can say "SKIP when the model
     // was unavailable, FAIL when a guard refused" — the distinction the validation pack had to
     // give up when both arrived identical (ADR-053 §5).
     for (BlueprintStep step : blueprint.steps()) {
-      if (states.get(step.id()) != RunStepStatus.FAILED) {
+      if (snapshot.states().get(step.id()) != RunStepStatus.FAILED) {
         continue;
       }
-      FailureCause cause = causes.getOrDefault(step.id(), FailureCause.EXECUTOR_FAULT);
+      FailureCause cause = snapshot.causes().getOrDefault(step.id(), FailureCause.EXECUTOR_FAULT);
       if (step.onErrorFor(cause) != ErrorPolicy.SKIP) {
-        failRun(run, blueprint, stepFailureMessage(runId, step.id()), cause);
+        failRun(
+            run,
+            blueprint,
+            snapshot.failureMessages().getOrDefault(step.id(), "step '" + step.id() + "' failed"),
+            cause);
         return;
       }
     }
 
-    RunScope scope = buildScope(run, blueprint);
+    Map<String, String> effectiveConfig = effectiveConfig(run, blueprint, installationConfig);
+    RunScope scope = buildScope(run, blueprint, snapshot, effectiveConfig);
     List<BlueprintStep> ready =
         blueprint.steps().stream()
-            .filter(step -> states.get(step.id()) == null)
-            .filter(step -> dependenciesSatisfied(step, states))
+            .filter(step -> snapshot.states().get(step.id()) == null)
+            .filter(step -> dependenciesSatisfied(step, snapshot.states()))
             .toList();
 
     for (BlueprintStep step : ready) {
-      dispatch(run, blueprint, step, scope);
+      dispatch(run, blueprint, step, scope, effectiveConfig);
     }
 
-    if (ready.isEmpty() && allTerminal(blueprint, stepStates(runId))) {
-      succeedRun(run, blueprint, buildScope(run, blueprint));
+    if (ready.isEmpty() && allTerminal(blueprint, snapshot.states())) {
+      succeedRun(run, blueprint, scope);
     }
   }
 
@@ -427,7 +457,12 @@ public class RunSagaService {
             });
   }
 
-  private void dispatch(RunRow run, Blueprint blueprint, BlueprintStep step, RunScope scope) {
+  private void dispatch(
+      RunRow run,
+      Blueprint blueprint,
+      BlueprintStep step,
+      RunScope scope,
+      Map<String, String> effectiveConfig) {
     if (step.condition() != null && !scope.matches(step.condition())) {
       recordSkipped(run.id(), step.id());
       advanceLater(run.id());
@@ -455,7 +490,6 @@ public class RunSagaService {
       return;
     }
 
-    Map<String, String> brandContext = effectiveConfig(run, blueprint);
     List<Object> items = expand(step, scope);
     if (step.forEach() != null && items.isEmpty()) {
       // A fan-out over nothing has nothing to wait for. Without a row for the step its dependants
@@ -468,6 +502,8 @@ public class RunSagaService {
       advanceLater(run.id());
       return;
     }
+    StepDeclarationService.DispatchDeclarations stepDeclarations =
+        declarations.forDispatch(run.studioKey(), run.installationId());
     for (int ordinal = 0; ordinal < items.size(); ordinal++) {
       RunScope itemScope = scope.withItem(items.get(ordinal));
       Map<String, Object> resolved = new LinkedHashMap<>();
@@ -486,10 +522,10 @@ public class RunSagaService {
                     resolved,
                     run.actorId(),
                     run.correlationId(),
-                    brandContext,
-                    declarations.scopeGuard(run.studioKey()),
-                    declarations.crisisTerms(run.studioKey()),
-                    declarations.crisisResponse(run.studioKey(), run.installationId()),
+                    effectiveConfig,
+                    stepDeclarations.scopeGuard(),
+                    stepDeclarations.crisisTerms(),
+                    stepDeclarations.crisisResponse(),
                     declarations.guardSubject(run.inputs()),
                     run.dataClass()));
       } catch (UnroutableCapabilityException e) {
@@ -680,8 +716,11 @@ public class RunSagaService {
             (rs, rowNum) ->
                 Map.entry(
                     rs.getObject("id", UUID.class),
-                    blueprintRepository.find(
-                        rs.getString("studio_key"), rs.getString("blueprint_version"))),
+                    findBlueprint(
+                        rs.getString("studio_key"),
+                        rs.getString("blueprint_version"),
+                        runtimeConfigService.intValue(
+                            BLUEPRINT_CACHE_SIZE_KEY, BLUEPRINT_CACHE_SIZE_FALLBACK))),
             run.id())
         .forEach(child -> child.getValue().ifPresent(b -> settled.put(child.getKey(), b)));
     return settled;
@@ -733,7 +772,8 @@ public class RunSagaService {
     return items.size() > effective ? items.subList(0, effective) : items;
   }
 
-  private RunScope buildScope(RunRow run, Blueprint blueprint) {
+  private RunScope buildScope(
+      RunRow run, Blueprint blueprint, Map<String, String> installationConfig) {
     Map<String, Object> outputs = new LinkedHashMap<>();
     Map<String, String> outNames = new LinkedHashMap<>();
     blueprint.steps().stream()
@@ -768,7 +808,13 @@ public class RunSagaService {
               }
             });
 
-    return new RunScope(run.inputs(), effectiveConfig(run, blueprint), outputs, null, Map.of());
+    return new RunScope(
+        run.inputs(), effectiveConfig(run, blueprint, installationConfig), outputs, null, Map.of());
+  }
+
+  private RunScope buildScope(
+      RunRow run, Blueprint blueprint, StepSnapshot snapshot, Map<String, String> effectiveConfig) {
+    return new RunScope(run.inputs(), effectiveConfig, snapshot.outputs(), null, Map.of());
   }
 
   /**
@@ -782,9 +828,10 @@ public class RunSagaService {
    * <p>The actor always wins — their configuration is the whole point of an installation; the
    * blueprint only supplies what they did not answer.
    */
-  private Map<String, String> effectiveConfig(RunRow run, Blueprint blueprint) {
+  private Map<String, String> effectiveConfig(
+      RunRow run, Blueprint blueprint, Map<String, String> installationConfig) {
     Map<String, String> effective = new LinkedHashMap<>(blueprint.configSchemaDefaults());
-    effective.putAll(installationConfig(run.installationId()));
+    effective.putAll(installationConfig);
     return effective;
   }
 
@@ -987,74 +1034,80 @@ public class RunSagaService {
         || status == RunStatus.CANCELLED;
   }
 
-  /**
-   * The worst state of each step across its fan-out instances.
-   *
-   * <p>Aggregated deliberately: a fan-out step is done only when every instance is, and it has
-   * failed if any instance has — so one straggler cannot let the DAG advance past it.
-   */
-  /**
-   * What to tell the user about a step that failed.
-   *
-   * <p>The step's own message when it has one, and {@code step '<id>' failed} only when it does
-   * not. A scope guard's refusal is a sentence the pack wrote for the reader (ADR-051), and the
-   * generic wording used to throw it away — along with every other cause the executor had already
-   * taken the trouble to record.
-   */
-  private String stepFailureMessage(UUID runId, String stepId) {
-    List<String> messages =
-        jdbcTemplate.queryForList(
-            """
-            SELECT error_message FROM studio_run_step
-             WHERE run_id = ? AND step_id = ? AND status = 'FAILED'
-               AND error_message IS NOT NULL AND error_message <> ''
-             ORDER BY finished_at NULLS LAST
-             LIMIT 1
-            """,
-            String.class,
-            runId,
-            stepId);
-    return messages.isEmpty() ? "step '" + stepId + "' failed" : messages.getFirst();
-  }
-
-  /**
-   * The cause each failed step declared, worst-case per fan-out instance.
-   *
-   * <p>A step whose row predates ADR-053, or whose executor declared nothing, reads as {@link
-   * FailureCause#EXECUTOR_FAULT} — the reading that releases the hold and blames nobody. Where two
-   * instances of one fan-out failed differently, the run takes the cause that costs the actor
-   * least: attributing a whole run to the user because one of five instances said so would be an
-   * inference dressed as a declaration.
-   */
-  private Map<String, FailureCause> stepCauses(UUID runId) {
-    Map<String, FailureCause> causes = new LinkedHashMap<>();
-    jdbcTemplate
-        .query(
-            "SELECT step_id, failure_cause FROM studio_run_step"
-                + " WHERE run_id = ? AND status = 'FAILED'",
-            (rs, rowNum) ->
-                Map.entry(rs.getString("step_id"), FailureCause.of(rs.getString("failure_cause"))),
-            runId)
-        .forEach(
-            entry ->
-                causes.merge(
-                    entry.getKey(),
-                    entry.getValue(),
-                    (left, right) ->
-                        left.settlesMeasuredWork() && !right.settlesMeasuredWork() ? right : left));
-    return causes;
-  }
-
-  private Map<String, RunStepStatus> stepStates(UUID runId) {
+  private StepSnapshot stepSnapshot(RunRow run, Blueprint blueprint) {
     Map<String, RunStepStatus> states = new LinkedHashMap<>();
+    Map<String, FailureCause> causes = new LinkedHashMap<>();
+    Map<String, FailureMessage> failures = new LinkedHashMap<>();
+    Map<String, Object> outputs = new LinkedHashMap<>();
+    Map<String, String> outNames = new LinkedHashMap<>();
+    blueprint.steps().stream()
+        .filter(step -> step.out() != null)
+        .forEach(step -> outNames.put(step.id(), step.out()));
+
     jdbcTemplate
         .query(
-            "SELECT step_id, status FROM studio_run_step WHERE run_id = ?",
+            "SELECT step_id, ordinal, status, failure_cause, error_message, finished_at, output"
+                + " FROM studio_run_step WHERE run_id = ? ORDER BY step_id, ordinal",
             (rs, rowNum) ->
-                Map.entry(rs.getString("step_id"), RunStepStatus.valueOf(rs.getString("status"))),
-            runId)
-        .forEach(entry -> states.merge(entry.getKey(), entry.getValue(), RunSagaService::worst));
-    return states;
+                new StepData(
+                    rs.getString("step_id"),
+                    rs.getInt("ordinal"),
+                    RunStepStatus.valueOf(rs.getString("status")),
+                    rs.getString("failure_cause"),
+                    rs.getString("error_message"),
+                    rs.getTimestamp("finished_at"),
+                    rs.getString("output")),
+            run.id())
+        .forEach(
+            row -> {
+              states.merge(row.stepId(), row.status(), RunSagaService::worst);
+              if (row.status() == RunStepStatus.FAILED) {
+                FailureCause cause = FailureCause.of(row.failureCause());
+                causes.merge(
+                    row.stepId(),
+                    cause,
+                    (left, right) ->
+                        left.settlesMeasuredWork() && !right.settlesMeasuredWork() ? right : left);
+                if (row.errorMessage() != null && !row.errorMessage().isEmpty()) {
+                  FailureMessage candidate =
+                      new FailureMessage(row.errorMessage(), row.finishedAt());
+                  failures.merge(row.stepId(), candidate, RunSagaService::earliestFailure);
+                }
+              }
+              if (row.status() == RunStepStatus.SUCCEEDED) {
+                String out = outNames.get(row.stepId());
+                if (out != null) {
+                  appendOutput(outputs, out, columns.objectMap(row.output()));
+                }
+              }
+            });
+
+    Map<String, String> failureMessages = new LinkedHashMap<>();
+    failures.forEach((stepId, failure) -> failureMessages.put(stepId, failure.message()));
+    return new StepSnapshot(states, causes, failureMessages, outputs);
+  }
+
+  private static FailureMessage earliestFailure(FailureMessage left, FailureMessage right) {
+    if (left.finishedAt() == null) {
+      return right.finishedAt() == null ? left : right;
+    }
+    if (right.finishedAt() == null) {
+      return left;
+    }
+    return left.finishedAt().compareTo(right.finishedAt()) <= 0 ? left : right;
+  }
+
+  private static void appendOutput(Map<String, Object> outputs, String key, Object value) {
+    Object existing = outputs.get(key);
+    switch (existing) {
+      case null -> outputs.put(key, value);
+      case List<?> list -> {
+        List<Object> grown = new ArrayList<>(list);
+        grown.add(value);
+        outputs.put(key, grown);
+      }
+      default -> outputs.put(key, new ArrayList<>(List.of(existing, value)));
+    }
   }
 
   private static RunStepStatus worst(RunStepStatus left, RunStepStatus right) {
@@ -1073,15 +1126,66 @@ public class RunSagaService {
   private Optional<StepRef> locateStep(String jobId) {
     return jdbcTemplate
         .query(
-            "SELECT run_id, step_id, ordinal FROM studio_run_step WHERE job_id = ?",
+            "SELECT r.id, r.installation_id, r.actor_id, r.studio_key, r.blueprint_version,"
+                + " r.status, r.hold_id, r.correlation_id, r.inputs, r.data_class, r.parent_run_id,"
+                + " s.step_id, s.ordinal, i.config AS installation_config,"
+                + " (SELECT config_value FROM studio_runtime_config WHERE config_key = ?)"
+                + " AS blueprint_cache_size"
+                + " FROM studio_run_step s JOIN studio_run r ON r.id = s.run_id"
+                + " LEFT JOIN studio_installation i ON i.id = r.installation_id"
+                + " WHERE s.job_id = ?",
             (rs, rowNum) ->
                 new StepRef(
-                    rs.getObject("run_id", UUID.class),
+                    rs.getObject("id", UUID.class),
                     rs.getString("step_id"),
-                    rs.getInt("ordinal")),
+                    rs.getInt("ordinal"),
+                    runRow(rs),
+                    columns.stringMap(rs.getString("installation_config")),
+                    intValue(rs.getString("blueprint_cache_size"), BLUEPRINT_CACHE_SIZE_FALLBACK)),
+            BLUEPRINT_CACHE_SIZE_KEY,
             jobId)
         .stream()
         .findFirst();
+  }
+
+  private Optional<Blueprint> findBlueprint(String studioKey, String version, int maximumEntries) {
+    if (maximumEntries <= 0) {
+      return blueprintRepository.find(studioKey, version);
+    }
+
+    synchronized (publishedBlueprints) {
+      while (publishedBlueprints.size() > maximumEntries) {
+        publishedBlueprints.remove(publishedBlueprints.keySet().iterator().next());
+      }
+      BlueprintKey key = new BlueprintKey(studioKey, version);
+      Blueprint cached = publishedBlueprints.get(key);
+      if (cached != null) {
+        return Optional.of(cached);
+      }
+
+      Optional<Blueprint> loaded = blueprintRepository.find(studioKey, version);
+      loaded
+          .filter(blueprint -> blueprint.status() != BlueprintStatus.DRAFT)
+          .ifPresent(
+              blueprint -> {
+                publishedBlueprints.put(key, blueprint);
+                while (publishedBlueprints.size() > maximumEntries) {
+                  publishedBlueprints.remove(publishedBlueprints.keySet().iterator().next());
+                }
+              });
+      return loaded;
+    }
+  }
+
+  private static int intValue(String raw, int defaultValue) {
+    if (raw == null) {
+      return defaultValue;
+    }
+    try {
+      return Integer.parseInt(raw.trim());
+    } catch (NumberFormatException malformed) {
+      return defaultValue;
+    }
   }
 
   private RunRow loadRun(UUID runId) {
@@ -1089,27 +1193,56 @@ public class RunSagaService {
         .query(
             "SELECT id, installation_id, actor_id, studio_key, blueprint_version, status, hold_id,"
                 + " correlation_id, inputs, data_class, parent_run_id FROM studio_run WHERE id = ?",
-            (rs, rowNum) ->
-                new RunRow(
-                    rs.getObject("id", UUID.class),
-                    rs.getObject("installation_id", UUID.class),
-                    rs.getString("actor_id"),
-                    rs.getString("studio_key"),
-                    rs.getString("blueprint_version"),
-                    RunStatus.valueOf(rs.getString("status")),
-                    rs.getString("hold_id"),
-                    rs.getString("correlation_id"),
-                    columns.objectMap(rs.getString("inputs")),
-                    DataClass.valueOf(rs.getString("data_class")),
-                    rs.getObject("parent_run_id", UUID.class)),
+            (rs, rowNum) -> runRow(rs),
             runId)
         .stream()
         .findFirst()
         .orElse(null);
   }
 
-  /** Where a job outcome lands in a DAG. */
-  private record StepRef(UUID runId, String stepId, int ordinal) {}
+  /** The run columns, named as both {@code loadRun} and {@code locateStep} select them. */
+  private RunRow runRow(java.sql.ResultSet rs) throws java.sql.SQLException {
+    return new RunRow(
+        rs.getObject("id", UUID.class),
+        rs.getObject("installation_id", UUID.class),
+        rs.getString("actor_id"),
+        rs.getString("studio_key"),
+        rs.getString("blueprint_version"),
+        RunStatus.valueOf(rs.getString("status")),
+        rs.getString("hold_id"),
+        rs.getString("correlation_id"),
+        columns.objectMap(rs.getString("inputs")),
+        DataClass.valueOf(rs.getString("data_class")),
+        rs.getObject("parent_run_id", UUID.class));
+  }
+
+  /** Where a job outcome lands in a DAG, with the rows already needed by its advance. */
+  private record StepRef(
+      UUID runId,
+      String stepId,
+      int ordinal,
+      RunRow run,
+      Map<String, String> installationConfig,
+      int blueprintCacheSize) {}
+
+  private record BlueprintKey(String studioKey, String version) {}
+
+  private record StepSnapshot(
+      Map<String, RunStepStatus> states,
+      Map<String, FailureCause> causes,
+      Map<String, String> failureMessages,
+      Map<String, Object> outputs) {}
+
+  private record StepData(
+      String stepId,
+      int ordinal,
+      RunStepStatus status,
+      String failureCause,
+      String errorMessage,
+      java.sql.Timestamp finishedAt,
+      String output) {}
+
+  private record FailureMessage(String message, java.sql.Timestamp finishedAt) {}
 
   /** The run row the saga reasons over. */
   private record RunRow(

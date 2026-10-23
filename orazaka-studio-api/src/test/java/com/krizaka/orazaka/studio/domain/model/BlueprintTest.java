@@ -365,7 +365,8 @@ class BlueprintTest {
         1,
         Duration.ofMinutes(30),
         null,
-        target);
+        target,
+        null);
   }
 
   @Test
@@ -403,6 +404,7 @@ class BlueprintTest {
                 1,
                 Duration.ofMinutes(1),
                 null,
-                "caption-studio"));
+                "caption-studio",
+                null));
   }
 }

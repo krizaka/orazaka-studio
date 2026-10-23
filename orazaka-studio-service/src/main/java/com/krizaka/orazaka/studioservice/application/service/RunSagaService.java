@@ -19,6 +19,7 @@ import com.krizaka.orazaka.studio.domain.model.StepKind;
 import com.krizaka.orazaka.studioservice.domain.exception.ContentPolicyRefusedException;
 import com.krizaka.orazaka.studioservice.domain.port.BlueprintRepository;
 import com.krizaka.orazaka.studioservice.domain.port.StepExecutionClient;
+import com.krizaka.orazaka.studioservice.infrastructure.support.CitationContract;
 import com.krizaka.orazaka.studioservice.infrastructure.support.ColumnValueResolver;
 import com.krizaka.orazaka.studioservice.infrastructure.support.OutputContractException;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -340,8 +341,10 @@ public class RunSagaService {
   }
 
   /**
-   * What the step's output breaks in its declared contract, or nothing — the same {@code
-   * OutputContract} the run's outputs are held to (ADR-076), never a second implementation.
+   * What the step's output breaks in its contract, or nothing — the same {@code OutputContract} the
+   * run's outputs are held to (ADR-076), never a second implementation. The contract is the one the
+   * step declares, else the one its capability publishes: a grounded-research step is held to the
+   * citation shape of ADR-087 ({@link CitationContract}, orazaka-studio#77).
    */
   private Optional<String> contractViolation(
       StepRef ref, Blueprint blueprint, Map<String, Object> output) {
@@ -351,9 +354,11 @@ public class RunSagaService {
     Optional<String> contract =
         blueprint.steps().stream()
             .filter(step -> step.id().equals(ref.stepId()))
-            .map(BlueprintStep::outputContract)
-            .filter(Objects::nonNull)
-            .findFirst();
+            .findFirst()
+            .flatMap(
+                step ->
+                    Optional.ofNullable(step.outputContract())
+                        .or(() -> CitationContract.defaultFor(step)));
     if (contract.isEmpty()) {
       return Optional.empty();
     }

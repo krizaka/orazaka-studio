@@ -10,7 +10,7 @@
 
 **The AI that never leaves home.**
 
-Studio & pack marketplace: pack catalogue, studio blueprints, installations and saga-driven runs, with its contract (studio-api) and HTTP client (studio-client).
+Studio & pack marketplace: pack catalogue, studio blueprints, installations and saga-driven runs, with its contract (studio-api) and HTTP client (studio-client). A step's output is held to the contract it declares (ADR-076); a `orazaka.core.research.grounded` step that declares none is held to the citation shape of ADR-087 (`CitationContract`): an output outside it fails the step as `EXECUTOR_FAULT`.
 
 [![CI](https://github.com/krizaka/orazaka-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/krizaka/orazaka-studio/actions/workflows/ci.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/krizaka/orazaka-studio/badge)](https://scorecard.dev/viewer/?uri=github.com/krizaka/orazaka-studio)

@@ -109,7 +109,8 @@ final class BlueprintMapper {
           readErrorPolicyByCause(step.path("onErrorByCause")),
           step.path("maxAttempts").asInt(DEFAULT_MAX_ATTEMPTS),
           readTimeout(step),
-          text(step, "condition"));
+          text(step, "condition"),
+          text(step, "studioKey"));
     } catch (IllegalArgumentException | NullPointerException invalid) {
       // Re-raised as a blueprint violation naming the node: an admin needs the step, not a stack
       // trace pointing at a record constructor.

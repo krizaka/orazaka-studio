@@ -10,6 +10,7 @@ import com.krizaka.orazaka.studio.domain.model.PackKind;
 import com.krizaka.orazaka.studio.domain.model.RegulatoryClass;
 import com.krizaka.orazaka.studio.domain.model.RunStatus;
 import com.krizaka.orazaka.studio.domain.model.RunStepStatus;
+import com.krizaka.orazaka.studio.domain.model.StepKind;
 import com.krizaka.orazaka.studio.domain.model.Studio;
 import com.krizaka.orazaka.studioservice.domain.exception.InstallationNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.exception.RunNotFoundException;
@@ -170,6 +171,109 @@ public class StudioRunService {
    */
   @Transactional
   public RunDetail start(String studioKey, String actorId, Map<String, Object> inputs) {
+    Target target = resolve(studioKey, actorId);
+    if (target.installationId() != null) {
+      return start(target.installationId(), actorId, inputs);
+    }
+    return launch(null, studioKey, target.version(), Map.of(), actorId, inputs);
+  }
+
+  /**
+   * Starts the run a {@link com.krizaka.orazaka.studio.domain.model.StepKind#STUDIO} step calls
+   * (orazaka-studio#62).
+   *
+   * <p>The same gates as a run the actor starts — the Studio resolved, entitled and installed the
+   * same way, the inputs validated, the content policy applied — and three differences: it holds
+   * nothing (its steps' work is settled inside the parent's hold), it does not count against the
+   * actor's concurrency (the parent already does), and it never answers from the result cache (its
+   * outcome must reach the parent step through the saga). A target that itself calls Studios is
+   * refused, so a composition is one level deep whatever was published before the rule.
+   *
+   * <p>Deliberately not {@code @Transactional}: it runs inside the parent's advance, and a refusal
+   * it throws becomes the parent step's failure — it must not mark that transaction rollback-only.
+   *
+   * @param runId the id the parent step already recorded as its job id
+   * @param parentRunId the run whose step calls this Studio
+   * @param studioKey the Studio to run
+   * @param actorId the parent's actor
+   * @param inputs the step's resolved inputs
+   * @throws IllegalArgumentException when the inputs miss what the target requires, or the target
+   *     itself calls a Studio
+   */
+  public void startChild(
+      UUID runId, UUID parentRunId, String studioKey, String actorId, Map<String, Object> inputs) {
+    Target target = resolve(studioKey, actorId);
+    String version = target.version();
+    if (target.installationId() != null) {
+      InstalledStudio installation =
+          installationService
+              .find(target.installationId(), actorId)
+              .orElseThrow(() -> new InstallationNotFoundException(target.installationId()));
+      if (installation.status() == InstallationStatus.PAUSED
+          || installation.status() == InstallationStatus.REVOKED) {
+        throw new IllegalStateException(
+            "installation of " + studioKey + " is " + installation.status());
+      }
+      version = installation.pinnedVersion();
+    }
+    String pinned = version;
+    Blueprint blueprint =
+        blueprintRepository
+            .find(studioKey, pinned)
+            .orElseThrow(
+                () -> new IllegalStateException("pinned version no longer exists: " + pinned));
+    if (blueprint.steps().stream().anyMatch(step -> step.kind() == StepKind.STUDIO)) {
+      throw new IllegalArgumentException(
+          "studio " + studioKey + " calls Studios itself and cannot be called (one level only)");
+    }
+    Map<String, Object> validated = validateInputs(blueprint, inputs);
+    contentPolicy.enforce(actorId, studioKey, validated, providersOf(blueprint));
+
+    DataClass dataClass = dataClassOf(studioKey);
+    String correlationId =
+        jdbcTemplate.queryForObject(
+            "SELECT correlation_id FROM studio_run WHERE id = ?", String.class, parentRunId);
+    jdbcTemplate.update(
+        "INSERT INTO studio_run (id, installation_id, actor_id, studio_key, blueprint_version,"
+            + " status, correlation_id, inputs, data_class, parent_run_id)"
+            + " VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?)",
+        runId,
+        target.installationId(),
+        actorId,
+        studioKey,
+        pinned,
+        RunStatus.RUNNING.name(),
+        // The parent's: one request, one correlation id, however many runs it took.
+        correlationId,
+        columns.json(validated),
+        dataClass.name(),
+        parentRunId);
+    runAuditService.recordStarted(runId, actorId, studioKey, dataClass);
+    outboxService.append(
+        runId.toString(),
+        "evt.studio.run.started",
+        Map.of(
+            "runId",
+            runId.toString(),
+            "actorId",
+            actorId,
+            "studioKey",
+            studioKey,
+            "correlationId",
+            correlationId,
+            "parentRunId",
+            parentRunId.toString()));
+    runSagaService.advance(runId);
+  }
+
+  /**
+   * Which installation and version a run of this Studio executes, by the Studio's kind (ADR-061).
+   *
+   * <p>A TOOLKIT floats to its latest published version, with no installation; a VERTICAL runs
+   * through the actor's installation and its pin. One resolution for the actor's runs and the runs
+   * a step calls, so the two cannot reach a Studio differently.
+   */
+  private Target resolve(String studioKey, String actorId) {
     Studio studio =
         catalogService
             .find(studioKey, null)
@@ -188,18 +292,21 @@ public class StudioRunService {
                       new IllegalStateException(
                           "studio has no published version to run: " + studioKey))
               .version();
-      return launch(null, studioKey, resolved, Map.of(), actorId, inputs);
+      return new Target(null, resolved);
     }
 
     Optional<InstalledStudio> installation = installationService.findForStudio(studioKey, actorId);
     if (installation.isPresent()) {
-      return start(installation.get().id(), actorId, inputs);
+      return new Target(installation.get().id(), installation.get().pinnedVersion());
     }
     // An actor who could not install it hears that first, exactly as the install path says it.
     accessService.requireEntitled(studio, actorId);
     throw new StudioNotInstalledException(
         studio.studioKey(), studio.entitlementKey(), studio.packKey());
   }
+
+  /** A resolved run target: the installation ({@code null} for a TOOLKIT) and the version. */
+  private record Target(UUID installationId, String version) {}
 
   /**
    * The run itself, once the entry has decided which version runs and for which installation.
@@ -397,7 +504,9 @@ public class StudioRunService {
   public List<RunDetail> history(String actorId, int limit) {
     return resolveArtefacts(
         jdbcTemplate.query(
-            SELECT_RUN + " WHERE actor_id = ? ORDER BY started_at DESC LIMIT ?",
+            // The runs the actor asked for: a run a step called is read through its parent.
+            SELECT_RUN
+                + " WHERE actor_id = ? AND parent_run_id IS NULL ORDER BY started_at DESC LIMIT ?",
             (rs, rowNum) -> readRun(rs),
             actorId,
             limit));
@@ -444,6 +553,15 @@ public class StudioRunService {
     if (run.finishedAt() != null) {
       return;
     }
+    UUID parent =
+        jdbcTemplate.queryForObject(
+            "SELECT parent_run_id FROM studio_run WHERE id = ?", UUID.class, runId);
+    if (parent != null) {
+      // A called run holds nothing of its own: cancelling it is cancelling the request it is part
+      // of, whose hold this releases and whose stop reaches it.
+      cancel(parent, actorId);
+      return;
+    }
     // Told to the executors first, in this transaction (outbox): a worker that is rendering stops
     // within one step, a job still queued is dropped on arrival. The hold is released below either
     // way.
@@ -483,7 +601,9 @@ public class StudioRunService {
     int cap = runtimeConfigService.intValue("run.max-concurrent-per-actor", 2);
     Integer active =
         jdbcTemplate.queryForObject(
-            "SELECT COUNT(*) FROM studio_run WHERE actor_id = ? AND finished_at IS NULL",
+            // A run a step called is part of its parent's slot, not a second one.
+            "SELECT COUNT(*) FROM studio_run WHERE actor_id = ? AND finished_at IS NULL"
+                + " AND parent_run_id IS NULL",
             Integer.class,
             actorId);
     if (active != null && active >= cap) {

@@ -83,7 +83,19 @@ public class RunSettlementService {
    * @param blueprint the version it pinned, for each step's capability
    */
   public void settleSucceeded(UUID runId, String holdId, Blueprint blueprint) {
-    creditReservationService.settle(holdId, runId, measured(runId, blueprint));
+    settleSucceeded(runId, holdId, Map.of(runId, blueprint));
+  }
+
+  /**
+   * Closes a successful run's hold at the sum of what its steps, and the steps of the runs it
+   * called, measured (orazaka-studio#62): a call's credits are inside its parent's hold.
+   *
+   * @param runId the run that holds
+   * @param holdId its reservation
+   * @param runs the run and the runs it called, each with the version it pinned
+   */
+  public void settleSucceeded(UUID runId, String holdId, Map<UUID, Blueprint> runs) {
+    creditReservationService.settle(holdId, runId, measured(runs));
   }
 
   /**
@@ -102,8 +114,23 @@ public class RunSettlementService {
    */
   public boolean settleFailed(
       UUID runId, String holdId, Blueprint blueprint, FailureCause cause, String reason) {
+    return settleFailed(runId, holdId, Map.of(runId, blueprint), cause, reason);
+  }
+
+  /**
+   * Closes a failed run's hold by the declared cause, counting the runs it called.
+   *
+   * @param runId the run that holds
+   * @param holdId its reservation
+   * @param runs the run and the runs it called, each with the version it pinned
+   * @param cause why it failed; {@code null} reads as {@link FailureCause#EXECUTOR_FAULT}
+   * @param reason the message recorded against the release
+   * @return whether any of them had consumed real compute, for the caller's metric
+   */
+  public boolean settleFailed(
+      UUID runId, String holdId, Map<UUID, Blueprint> runs, FailureCause cause, String reason) {
     FailureCause declared = cause == null ? FailureCause.EXECUTOR_FAULT : cause;
-    List<MeteredStep> steps = measured(runId, blueprint);
+    List<MeteredStep> steps = measured(runs);
     boolean consumed = !steps.isEmpty();
     if (declared.settlesMeasuredWork() && consumed) {
       creditReservationService.settle(holdId, runId, steps);
@@ -135,6 +162,12 @@ public class RunSettlementService {
    * resolves is skipped with a warning — it cannot be priced, and refusing to settle the whole run
    * because one capability was withdrawn mid-flight would strand the actor's credits.
    */
+  private List<MeteredStep> measured(Map<UUID, Blueprint> runs) {
+    List<MeteredStep> metered = new ArrayList<>();
+    runs.forEach((runId, blueprint) -> metered.addAll(measured(runId, blueprint)));
+    return metered;
+  }
+
   private List<MeteredStep> measured(UUID runId, Blueprint blueprint) {
     Map<String, String> capabilityByStep = new LinkedHashMap<>();
     for (BlueprintStep step : blueprint.steps()) {

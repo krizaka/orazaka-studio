@@ -34,6 +34,8 @@ import java.util.regex.Pattern;
  * @param maxAttempts total attempts, at least one
  * @param timeout per-attempt ceiling before the saga fails the step
  * @param condition one of the four supported comparison forms, or {@code null} to always run
+ * @param studioKey the published Studio a {@link StepKind#STUDIO} step calls; {@code null} for
+ *     every other kind
  */
 public record BlueprintStep(
     String id,
@@ -49,7 +51,8 @@ public record BlueprintStep(
     Map<FailureCause, ErrorPolicy> onErrorByCause,
     int maxAttempts,
     Duration timeout,
-    String condition) {
+    String condition,
+    String studioKey) {
 
   /** Addressable from three places, so it may not carry case, whitespace or punctuation. */
   private static final Pattern ID = Pattern.compile("^[a-z][a-z0-9-]{0,59}$");
@@ -59,6 +62,46 @@ public record BlueprintStep(
    * upper bound it can trust to distinguish "slow" from "the worker died".
    */
   private static final Duration MAX_TIMEOUT = Duration.ofHours(1);
+
+  /** The shape of a Studio key, as the catalogue mints them. */
+  private static final Pattern STUDIO_KEY = Pattern.compile("^[a-z][a-z0-9-]{0,59}$");
+
+  /**
+   * Every step but a {@link StepKind#STUDIO} one: the signature the DSL had before a step could
+   * call a Studio, kept so nothing that builds a step has to name a field it does not use.
+   */
+  public BlueprintStep(
+      String id,
+      StepKind kind,
+      String featureKey,
+      String connectorType,
+      Set<String> dependsOn,
+      Map<String, String> inputs,
+      String out,
+      String forEach,
+      int maxParallel,
+      ErrorPolicy onError,
+      Map<FailureCause, ErrorPolicy> onErrorByCause,
+      int maxAttempts,
+      Duration timeout,
+      String condition) {
+    this(
+        id,
+        kind,
+        featureKey,
+        connectorType,
+        dependsOn,
+        inputs,
+        out,
+        forEach,
+        maxParallel,
+        onError,
+        onErrorByCause,
+        maxAttempts,
+        timeout,
+        condition,
+        null);
+  }
 
   /** Compact canonical constructor enforcing everything a single step can know (ERR-106). */
   public BlueprintStep {
@@ -80,6 +123,15 @@ public record BlueprintStep(
     if (timeout.isNegative() || timeout.isZero() || timeout.compareTo(MAX_TIMEOUT) > 0) {
       throw new IllegalArgumentException(
           "timeout must be within (0, " + MAX_TIMEOUT + "], was: " + timeout);
+    }
+    if (kind == StepKind.STUDIO
+        ? studioKey == null || !STUDIO_KEY.matcher(studioKey).matches()
+        : studioKey != null) {
+      throw new IllegalArgumentException(
+          "a STUDIO step, and only a STUDIO step, names a studioKey matching "
+              + STUDIO_KEY.pattern()
+              + ", was: "
+              + studioKey);
     }
     dependsOn = dependsOn == null ? Set.of() : Set.copyOf(dependsOn);
     inputs = inputs == null ? Map.of() : Map.copyOf(inputs);

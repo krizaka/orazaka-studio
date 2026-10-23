@@ -299,6 +299,9 @@ CREATE TABLE studio_run (
     -- copies. A cached run is never a source: every answer names the run that really computed it.
     input_fingerprint VARCHAR(64),
     cached_from       UUID,
+    -- orazaka-studio#62. A run a STUDIO step started: it holds nothing (its work is settled inside the parent's
+    -- hold) and its outcome becomes the parent step's, found by the step's job_id = this run's id. One level.
+    parent_run_id     UUID REFERENCES studio_run(id) ON DELETE CASCADE,
     started_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
     finished_at       TIMESTAMPTZ,
     CONSTRAINT ck_run_data_class CHECK (data_class IN ('STANDARD','SENSITIVE','REGULATED')),
@@ -313,6 +316,7 @@ CREATE TABLE studio_run (
 CREATE INDEX idx_studio_run_result_cache ON studio_run (actor_id, studio_key, blueprint_version, input_fingerprint)
     WHERE status = 'SUCCEEDED' AND cached_from IS NULL;
 -- The sweeper's second window and the analytics exclusion both filter on this.
+CREATE INDEX idx_studio_run_parent ON studio_run(parent_run_id) WHERE parent_run_id IS NOT NULL;
 CREATE INDEX idx_run_data_class ON studio_run(data_class, finished_at) WHERE data_class <> 'STANDARD';
 CREATE INDEX idx_studio_run_failure_cause ON studio_run(failure_cause) WHERE failure_cause IS NOT NULL;
 -- The backstop of the advisory lock (ADR-083): one run per (actor, key), whatever the code does.

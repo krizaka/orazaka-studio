@@ -541,6 +541,117 @@ class StudioRunLifecycleIT {
     assertEquals("Le bail", finished.outputs().getFirst().value());
   }
 
+  // ── orazaka-studio#77: a grounded step is held to the citation contract (ADR-087) ───────
+
+  /** One grounded-research step that declares no contract of its own; no retry. */
+  private UUID installGroundedStudio(String studioKey) {
+    String definition =
+        """
+        {"studioKey": "%s", "version": "1.0.0",
+         "steps": [
+           {"id": "ground", "kind": "CAPABILITY", "featureKey": "orazaka.core.research.grounded",
+            "inputs": {"question": "{{inputs.question}}"}, "out": "ground",
+            "onError": "FAIL", "maxAttempts": 1, "timeout": "PT1M"}
+         ],
+         "outputs": [{"key": "answer", "label": "Answer", "from": "{{steps.ground.answer}}",
+                      "type": "TEXT"}]}
+        """
+            .formatted(studioKey);
+    jdbcTemplate.update(
+        "INSERT INTO studio (studio_key, label, tagline, profession, icon_key, pricing,"
+            + " entitlement_key, status, publisher_id, latest_version, sort_weight)"
+            + " VALUES (?, 'Grounded', 'Cites what it reads', 'trades', 'studio', 'FREE', ?,"
+            + " 'PUBLISHED', 'orazaka', '1.0.0', 200) ON CONFLICT (studio_key) DO NOTHING",
+        studioKey,
+        "studio." + studioKey);
+    jdbcTemplate.update(
+        "INSERT INTO studio_blueprint (studio_key, version, status, definition, input_schema,"
+            + " config_schema, estimated_credits, changelog, published_at, created_by)"
+            + " VALUES (?, '1.0.0', 'PUBLISHED', ?::jsonb, '{\"type\":\"object\"}'::jsonb,"
+            + " '{}'::jsonb, 10, 'test', now(), 'system') ON CONFLICT (studio_key, version) DO NOTHING",
+        studioKey,
+        definition);
+    return installationService.install(studioKey, ACTOR, Map.of(), "fr").id();
+  }
+
+  @Test
+  @DisplayName(
+      "[studio#77] a grounded step's output outside the citation shape fails the step as"
+          + " EXECUTOR_FAULT, fails the run and releases the hold")
+  void aGroundedStepOutputOutsideTheCitationContractFails() {
+    RunDetail run =
+        runService.start(installGroundedStudio("grounded-bad"), ACTOR, Map.of("question", "bail"));
+
+    sagaService.applyOutcome(
+        executor.dispatched.getFirst(),
+        Map.of(
+            "answer",
+            "Quatorze jours.",
+            "claims",
+            List.of(Map.of("text", "Quatorze jours.", "status", "MAYBE", "citations", List.of()))),
+        null);
+
+    RunDetail failed = runService.find(run.id(), ACTOR).orElseThrow();
+    assertEquals(RunStatus.FAILED, failed.status());
+    assertTrue(
+        failed.errorMessage().startsWith("OUTPUT_INVALID: "),
+        () -> "the reason names the contract, got: " + failed.errorMessage());
+    assertTrue(
+        failed.errorMessage().contains("$.sources: required")
+            && failed
+                .errorMessage()
+                .contains("$.claims[0].status: must be one of the declared values"),
+        () -> "the paths and rules, never the value: " + failed.errorMessage());
+    assertFalse(failed.errorMessage().contains("Quatorze"), "the value never leaves the saga");
+    assertEquals(
+        "EXECUTOR_FAULT",
+        jdbcTemplate.queryForObject(
+            "SELECT failure_cause FROM studio_run_step WHERE run_id = ? AND step_id = 'ground'",
+            String.class,
+            run.id()),
+        "the model did not produce what was asked: the executor's fault");
+    assertTrue(credits.released.contains("hold-1"), "the executor's fault: the hold goes back");
+  }
+
+  @Test
+  @DisplayName("[studio#77] a grounded step's output in the citation shape passes unchanged")
+  void aGroundedStepOutputInTheCitationShapePasses() {
+    RunDetail run =
+        runService.start(installGroundedStudio("grounded-good"), ACTOR, Map.of("question", "bail"));
+
+    sagaService.applyOutcome(
+        executor.dispatched.getFirst(),
+        Map.of(
+            "answer",
+            "Trente jours.",
+            "claims",
+            List.of(
+                Map.of(
+                    "text",
+                    "Trente jours.",
+                    "status",
+                    "VERIFIED",
+                    "citations",
+                    List.of(
+                        Map.of(
+                            "url",
+                            "https://example.org/reglement",
+                            "quote",
+                            "trente jours",
+                            "contentHash",
+                            "a".repeat(64),
+                            "fetchedAt",
+                            "2026-10-23T12:00:00Z")))),
+            "sources",
+            List.of(
+                Map.of("url", "https://example.org/reglement", "title", "R", "sourceKey", "site"))),
+        null);
+
+    RunDetail finished = runService.find(run.id(), ACTOR).orElseThrow();
+    assertEquals(RunStatus.SUCCEEDED, finished.status());
+    assertEquals("Trente jours.", finished.outputs().getFirst().value());
+  }
+
   // ── orazaka-studio#63: resume a finished run from a step ─────────────
 
   @Test

@@ -1139,18 +1139,7 @@ public class RunSagaService {
                     rs.getObject("id", UUID.class),
                     rs.getString("step_id"),
                     rs.getInt("ordinal"),
-                    new RunRow(
-                        rs.getObject("id", UUID.class),
-                        rs.getObject("installation_id", UUID.class),
-                        rs.getString("actor_id"),
-                        rs.getString("studio_key"),
-                        rs.getString("blueprint_version"),
-                        RunStatus.valueOf(rs.getString("status")),
-                        rs.getString("hold_id"),
-                        rs.getString("correlation_id"),
-                        columns.objectMap(rs.getString("inputs")),
-                        DataClass.valueOf(rs.getString("data_class")),
-                        rs.getObject("parent_run_id", UUID.class)),
+                    runRow(rs),
                     columns.stringMap(rs.getString("installation_config")),
                     intValue(rs.getString("blueprint_cache_size"), BLUEPRINT_CACHE_SIZE_FALLBACK)),
             BLUEPRINT_CACHE_SIZE_KEY,
@@ -1204,23 +1193,27 @@ public class RunSagaService {
         .query(
             "SELECT id, installation_id, actor_id, studio_key, blueprint_version, status, hold_id,"
                 + " correlation_id, inputs, data_class, parent_run_id FROM studio_run WHERE id = ?",
-            (rs, rowNum) ->
-                new RunRow(
-                    rs.getObject("id", UUID.class),
-                    rs.getObject("installation_id", UUID.class),
-                    rs.getString("actor_id"),
-                    rs.getString("studio_key"),
-                    rs.getString("blueprint_version"),
-                    RunStatus.valueOf(rs.getString("status")),
-                    rs.getString("hold_id"),
-                    rs.getString("correlation_id"),
-                    columns.objectMap(rs.getString("inputs")),
-                    DataClass.valueOf(rs.getString("data_class")),
-                    rs.getObject("parent_run_id", UUID.class)),
+            (rs, rowNum) -> runRow(rs),
             runId)
         .stream()
         .findFirst()
         .orElse(null);
+  }
+
+  /** The run columns, named as both {@code loadRun} and {@code locateStep} select them. */
+  private RunRow runRow(java.sql.ResultSet rs) throws java.sql.SQLException {
+    return new RunRow(
+        rs.getObject("id", UUID.class),
+        rs.getObject("installation_id", UUID.class),
+        rs.getString("actor_id"),
+        rs.getString("studio_key"),
+        rs.getString("blueprint_version"),
+        RunStatus.valueOf(rs.getString("status")),
+        rs.getString("hold_id"),
+        rs.getString("correlation_id"),
+        columns.objectMap(rs.getString("inputs")),
+        DataClass.valueOf(rs.getString("data_class")),
+        rs.getObject("parent_run_id", UUID.class));
   }
 
   /** Where a job outcome lands in a DAG, with the rows already needed by its advance. */

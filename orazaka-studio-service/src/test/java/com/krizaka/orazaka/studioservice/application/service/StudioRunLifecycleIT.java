@@ -761,7 +761,10 @@ class StudioRunLifecycleIT {
         () -> "the descriptions in item order, got: " + executor.lastInputs);
   }
 
-  /** A vision result: its text under `analysis` (what the executor returns), and `content` for blueprints that read it. */
+  /**
+   * A vision result: its text under `analysis` (what the executor returns), and `content` for
+   * blueprints that read it.
+   */
   private static Map<String, Object> description(String text) {
     return Map.of("analysis", text, "content", text);
   }

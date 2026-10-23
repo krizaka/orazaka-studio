@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.krizaka.orazaka.studio.domain.model.StudioRuntimeConfig;
+import com.krizaka.orazaka.studioservice.domain.model.RuntimeConfigChange;
 import com.krizaka.orazaka.test.architecture.SqlBoundaryRules;
 import com.krizaka.test.container.ServiceRoles;
 import com.zaxxer.hikari.HikariDataSource;
@@ -122,6 +123,22 @@ class StudioRuntimeConfigAdminIT {
         .containsEntry("config_key", "run.fan-out-max")
         .containsEntry("before_value", "10")
         .containsEntry("after_value", "12");
+  }
+
+  @Test
+  @DisplayName("The history reads the audited changes newest first, per setting or all, bounded")
+  void historyReadsTheAuditNewestFirst() throws Exception {
+    service.update("run.fan-out-max", JSON.readTree("12"), "operator-1");
+    service.update("run.fan-out-max", JSON.readTree("14"), "operator-2");
+    service.update("run.max-concurrent-per-actor", JSON.readTree("3"), "operator-1");
+
+    var fanOut = service.history("run.fan-out-max", 50);
+    assertThat(fanOut).extracting(RuntimeConfigChange::after).containsExactly("14", "12");
+    assertThat(fanOut.getFirst().before()).isEqualTo("12");
+    assertThat(fanOut.getFirst().actorId()).isEqualTo("operator-2");
+    assertThat(service.history(null, 50)).hasSize(3);
+    assertThat(service.history(null, 1)).hasSize(1);
+    assertThat(service.history(null, 0)).hasSize(1);
   }
 
   @Test

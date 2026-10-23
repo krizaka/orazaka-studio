@@ -1,6 +1,7 @@
 package com.krizaka.orazaka.studioservice.application.service;
 
 import com.krizaka.orazaka.studio.domain.model.StudioRuntimeConfig;
+import com.krizaka.orazaka.studioservice.domain.model.RuntimeConfigChange;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -22,6 +23,9 @@ import tools.jackson.databind.JsonNode;
  */
 @Service
 public class StudioRuntimeConfigService {
+
+  /** The longest history page one request may read. @fixed: a page size, not a business knob. */
+  static final int HISTORY_MAX = 200;
 
   private static final String SELECT_COLUMNS =
       "SELECT config_key, config_value, value_type, description, default_value, min_value,"
@@ -115,6 +119,35 @@ public class StudioRuntimeConfigService {
         before.value(),
         afterValue);
     return toContract(before.withValue(afterValue));
+  }
+
+  /**
+   * The audited changes, newest first: the console's history of a setting, or of all of them.
+   *
+   * @param key one setting, or {@code null} for every setting
+   * @param limit how many changes, clamped to 1..{@value #HISTORY_MAX}
+   * @return the changes, newest first
+   */
+  public List<RuntimeConfigChange> history(String key, int limit) {
+    int bounded = Math.clamp(limit, 1, HISTORY_MAX);
+    RowMapper<RuntimeConfigChange> change =
+        (rs, rowNum) ->
+            new RuntimeConfigChange(
+                rs.getTimestamp("at").toInstant(),
+                rs.getString("actor_id"),
+                rs.getString("config_key"),
+                rs.getString("before_value"),
+                rs.getString("after_value"));
+    String select =
+        "SELECT at, actor_id, config_key, before_value, after_value"
+            + " FROM studio_runtime_config_audit";
+    return key == null || key.isBlank()
+        ? jdbcTemplate.query(select + " ORDER BY at DESC, id DESC LIMIT ?", change, bounded)
+        : jdbcTemplate.query(
+            select + " WHERE config_key = ? ORDER BY at DESC, id DESC LIMIT ?",
+            change,
+            key,
+            bounded);
   }
 
   private static String encode(JsonNode submitted, ConfigRow config) {

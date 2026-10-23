@@ -110,7 +110,8 @@ final class BlueprintMapper {
           step.path("maxAttempts").asInt(DEFAULT_MAX_ATTEMPTS),
           readTimeout(step),
           text(step, "condition"),
-          text(step, "studioKey"));
+          text(step, "studioKey"),
+          contractOf(step));
     } catch (IllegalArgumentException | NullPointerException invalid) {
       // Re-raised as a blueprint violation naming the node: an admin needs the step, not a stack
       // trace pointing at a record constructor.
@@ -194,6 +195,27 @@ final class BlueprintMapper {
           "the output schema uses keywords the saga does not enforce: " + unsupported);
     }
     return schema.toString();
+  }
+
+  /**
+   * A step's output contract (orazaka-studio#59): the same enforced subset as a run output's,
+   * refused at load on any other keyword, so the step and the run cannot read one schema two ways.
+   */
+  private static String contractOf(JsonNode step) {
+    JsonNode contract = step.path("outputContract");
+    if (contract.isMissingNode() || contract.isNull()) {
+      return null;
+    }
+    if (!contract.isObject()) {
+      throw new BlueprintValidationException(text(step, "id"), "outputContract must be an object");
+    }
+    List<String> unsupported = OutputContract.unsupportedKeywords(contract);
+    if (!unsupported.isEmpty()) {
+      throw new BlueprintValidationException(
+          text(step, "id"),
+          "the output contract uses keywords the saga does not enforce: " + unsupported);
+    }
+    return contract.toString();
   }
 
   private static Set<String> readStringSet(JsonNode node) {

@@ -460,6 +460,79 @@ class StudioRunLifecycleIT {
     assertEquals(1, executor.stopped.size(), "the child's in-flight job is told to stop");
   }
 
+  // ── orazaka-studio#59: a step's output is held to its contract before it counts ───────
+
+  /** One chat step whose output must carry a non-empty `content`, retried once. */
+  private UUID installContractStudio(String studioKey) {
+    String definition =
+        """
+        {"studioKey": "%s", "version": "1.0.0",
+         "steps": [
+           {"id": "write", "kind": "CAPABILITY", "featureKey": "orazaka.core.chat.completion",
+            "inputs": {"prompt": "{{inputs.topic}}"}, "out": "write",
+            "onError": "RETRY", "maxAttempts": 2, "timeout": "PT1M",
+            "outputContract": {"type": "object", "required": ["content"],
+                               "properties": {"content": {"type": "string", "minLength": 1}}}}
+         ],
+         "outputs": [{"key": "text", "label": "Text", "from": "{{steps.write.content}}",
+                      "type": "TEXT"}]}
+        """
+            .formatted(studioKey);
+    jdbcTemplate.update(
+        "INSERT INTO studio (studio_key, label, tagline, profession, icon_key, pricing,"
+            + " entitlement_key, status, publisher_id, latest_version, sort_weight)"
+            + " VALUES (?, 'Contract', 'Checks its step', 'trades', 'studio', 'FREE', ?,"
+            + " 'PUBLISHED', 'orazaka', '1.0.0', 200) ON CONFLICT (studio_key) DO NOTHING",
+        studioKey,
+        "studio." + studioKey);
+    jdbcTemplate.update(
+        "INSERT INTO studio_blueprint (studio_key, version, status, definition, input_schema,"
+            + " config_schema, estimated_credits, changelog, published_at, created_by)"
+            + " VALUES (?, '1.0.0', 'PUBLISHED', ?::jsonb, '{\"type\":\"object\"}'::jsonb,"
+            + " '{}'::jsonb, 10, 'test', now(), 'system') ON CONFLICT (studio_key, version) DO NOTHING",
+        studioKey,
+        definition);
+    return installationService.install(studioKey, ACTOR, Map.of(), "fr").id();
+  }
+
+  @Test
+  @DisplayName(
+      "[studio#59] an output outside the step's contract fails it, is retried, then fails the run"
+          + " and releases the hold")
+  void aStepOutputOutsideItsContractIsRetriedThenFails() {
+    RunDetail run =
+        runService.start(installContractStudio("contract-check"), ACTOR, Map.of("topic", "bail"));
+
+    sagaService.applyOutcome(executor.dispatched.getFirst(), Map.of("content", ""), null);
+    assertEquals(
+        2, executor.dispatched.size(), "the hollow output is retried by the step's policy");
+    assertEquals(
+        RunStatus.RUNNING,
+        runService.find(run.id(), ACTOR).orElseThrow().status(),
+        "a retry left: the run goes on");
+
+    sagaService.applyOutcome(executor.dispatched.getLast(), Map.of("text", "no content"), null);
+    RunDetail failed = runService.find(run.id(), ACTOR).orElseThrow();
+    assertEquals(RunStatus.FAILED, failed.status());
+    assertTrue(
+        failed.errorMessage().startsWith("OUTPUT_INVALID: "),
+        () -> "the reason names the contract, got: " + failed.errorMessage());
+    assertTrue(credits.released.contains("hold-1"), "the executor's fault: the hold goes back");
+  }
+
+  @Test
+  @DisplayName("[studio#59] an output inside the contract passes unchanged")
+  void aStepOutputInsideItsContractPasses() {
+    RunDetail run =
+        runService.start(installContractStudio("contract-pass"), ACTOR, Map.of("topic", "bail"));
+
+    sagaService.applyOutcome(executor.dispatched.getFirst(), Map.of("content", "Le bail"), null);
+
+    RunDetail finished = runService.find(run.id(), ACTOR).orElseThrow();
+    assertEquals(RunStatus.SUCCEEDED, finished.status());
+    assertEquals("Le bail", finished.outputs().getFirst().value());
+  }
+
   // ── §15: install → run → step outcomes → settle ───────────────────────────
 
   @Test

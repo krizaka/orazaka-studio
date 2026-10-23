@@ -532,6 +532,8 @@ class StudioRunLifecycleIT {
     RunDetail finished = runService.find(run.id(), ACTOR).orElseThrow();
     assertEquals(RunStatus.SUCCEEDED, finished.status());
     assertEquals("Le bail", finished.outputs().getFirst().value());
+  }
+
   // ── orazaka-studio#63: resume a finished run from a step ─────────────
 
   @Test

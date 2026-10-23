@@ -34,6 +34,7 @@ part of the [Orazaka platform](https://github.com/krizaka/orazaka) by [Krizaka](
 | Studios & blueprints (semver'd DAGs) | `/api/v1/studios` · `/api/v1/studios/{key}/blueprints` |
 | Installations | `/api/v1/studios/{key}/installations` |
 | Runs (saga, approvals, cancel) | `/api/v1/studios/runs` |
+| Admin runtime settings | `GET /api/v1/admin/studios/runtime-config` · `PUT /api/v1/admin/studios/runtime-config/{key}` |
 
 | Module | Role |
 |:---|:---|
@@ -79,6 +80,27 @@ consumers run on virtual threads. Step state, failure cause, and output rows are
 each advance. The five-step/20-item fan-out benchmark is `RunOverheadMeasurementIT` and writes its
 latencies, JFR profile, and `EXPLAIN ANALYZE` plans for the job lookup and step snapshot to
 `target/m1-saga-hot-path.txt` and `target/m1-saga-hot-path.jfr`.
+
+## Admin runtime settings
+
+Both runtime-config endpoints require the `ADMIN` role. The list response includes each setting's
+typed current value, type, description, default, and persisted bounds. Replace a value with a JSON
+value matching its type: integer settings take a JSON number, booleans take `true`/`false`, and list
+settings take an array of strings. For example:
+
+```http
+PUT /api/v1/admin/studios/runtime-config/run.fan-out-max
+Content-Type: application/json
+
+{"value": 12}
+```
+
+Updates are audited with the administrator id and before/after values. Runtime reads query the
+database directly, so a successful update is effective on the next run without a service restart.
+
+A fresh database receives the schema and bounds from `infra/initdb/80-studio.sql`. An existing one (dev)
+is migrated from the workspace, additive and idempotent: `node scripts/dev-deploy.mjs runtime-config-admin`
+([krizaka/orazaka](https://github.com/krizaka/orazaka), `infra/migrations/2026-10-23-studio-runtime-config-admin.sql`).
 
 ## Governance
 

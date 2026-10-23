@@ -456,8 +456,27 @@ CREATE TABLE studio_runtime_config (
     config_key   VARCHAR(120) PRIMARY KEY,
     config_value TEXT NOT NULL,
     value_type   VARCHAR(20) NOT NULL,
-    description  TEXT
+    description  TEXT NOT NULL,
+    default_value TEXT NOT NULL,
+    min_value    BIGINT,
+    max_value    BIGINT,
+    max_items    INTEGER,
+    CONSTRAINT ck_studio_runtime_config_bounds CHECK (
+        (min_value IS NULL OR max_value IS NULL OR min_value <= max_value)
+        AND (max_items IS NULL OR max_items >= 0)
+    )
 );
+
+CREATE TABLE studio_runtime_config_audit (
+    id BIGSERIAL PRIMARY KEY,
+    at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    actor_id VARCHAR(255) NOT NULL,
+    config_key VARCHAR(120) NOT NULL,
+    before_value TEXT NOT NULL,
+    after_value TEXT NOT NULL
+);
+CREATE INDEX idx_studio_runtime_config_audit_at
+    ON studio_runtime_config_audit(at DESC);
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- CONTENT POLICY — a policy engine the OPERATOR configures, not a built-in filter.
@@ -518,33 +537,38 @@ CREATE TRIGGER trg_content_policy_audit_immutable
 -- STUDIO SEED DATA (dev only, idempotent)
 -- ============================================================================
 
--- Seeded once; an admin change must survive the next `orazaka start`, hence
--- ON CONFLICT DO NOTHING rather than a reapplied file.
-INSERT INTO studio_runtime_config (config_key, config_value, value_type, description) VALUES
- ('run.max-concurrent-per-actor',    '2',     'int',     'Concurrent runs one actor may hold.'),
- ('run.result-cache.studios',        '',      'list',    'Studios whose identical runs (same actor, version, inputs, configuration) answer from the recorded result, with no hold and no model call (orazaka-studio#61). Deterministic Studios only; empty = off.'),
- ('run.max-seconds',                 '14400', 'int',     'Longest a run may stay in flight (RUNNING) before the sweeper fails it and frees its hold and its slot.'),
- ('run.concurrency-retry-seconds',    '15',    'int',     'Retry-After (seconds) of the 429 answered when an actor holds its concurrent runs.'),
- ('run.max-streams-per-actor',      '5',     'int',     'Run event streams (SSE) one actor may hold open per instance.'),
- ('run.events.poll-millis',          '1500',  'int',     'How often an open run event stream reads the run.'),
- ('run.events.heartbeat-seconds',    '15',    'int',     'Silence after which a run event stream sends a keep-alive comment.'),
- ('run.events.max-seconds',          '1800',  'int',     'Longest a run event stream stays open; the client reconnects.'),
+-- An admin's active value survives startup; seed defaults and bounds stay aligned with the schema.
+INSERT INTO studio_runtime_config
+    (config_key, config_value, value_type, description, default_value, min_value, max_value, max_items)
+VALUES
+ ('run.max-concurrent-per-actor', '2', 'int', 'Concurrent runs one actor may hold.', '2', 1, 100, NULL),
+ ('run.result-cache.studios', '', 'list', 'Studios whose identical runs (same actor, version, inputs, configuration) answer from the recorded result, with no hold and no model call (orazaka-studio#61). Deterministic Studios only; empty = off.', '', NULL, NULL, 100),
+ ('run.max-seconds', '14400', 'int', 'Longest a run may stay in flight (RUNNING) before the sweeper fails it and frees its hold and its slot.', '14400', 60, 86400, NULL),
+ ('run.concurrency-retry-seconds', '15', 'int', 'Retry-After (seconds) of the 429 answered when an actor holds its concurrent runs.', '15', 1, 300, NULL),
+ ('run.max-streams-per-actor', '5', 'int', 'Run event streams (SSE) one actor may hold open per instance.', '5', 1, 100, NULL),
+ ('run.events.poll-millis', '1500', 'int', 'How often an open run event stream reads the run.', '1500', 100, 60000, NULL),
+ ('run.events.heartbeat-seconds', '15', 'int', 'Silence after which a run event stream sends a keep-alive comment.', '15', 1, 300, NULL),
+ ('run.events.max-seconds', '1800', 'int', 'Longest a run event stream stays open; the client reconnects.', '1800', 60, 86400, NULL),
     -- One ceiling per LANE (ADR-067). A single number served neither: 900 s was 9x the p95 of an
     -- image generation (100.5 s measured) and 120x the p95 of a chat step (7.4 s), so a hung
     -- interactive step sat for a quarter of an hour while a legitimately queued image was still at
     -- risk once the queue genuinely fills.
-    ('run.step-timeout-seconds.interactive', '300',  'int',     'Per-step ceiling in the INTERACTIVE lane — 30x the measured p95 of a chat or analysis step.'),
-    ('run.step-timeout-seconds.batch',       '1800', 'int',     'Per-step ceiling in the BATCH lane — room for queue wait behind ~25 image generations at the measured p50 of 67 s.'),
- ('run.fan-out-max',                 '10',    'int',     'Hard cap on forEach expansion — protects the MLX budget.'),
- ('run.blueprint-cache-size',       '100',    'int',     'Maximum published blueprint versions parsed and cached per service instance; 0 disables the cache.'),
- ('run.outcome-listener.concurrency', '2',    'int',     'Outcome listener consumer count per service instance, adjusted live on its virtual-thread executor.'),
- ('marketplace.third-party-enabled', 'false', 'boolean', 'Opens publishing to non-orazaka publishers.'),
- ('retention.run-days',                '90',    'int',     'Days a finished run and its artefacts are kept (GDPR / Loi 25).'),
+    ('run.step-timeout-seconds.interactive', '300', 'int', 'Per-step ceiling in the INTERACTIVE lane — 30x the measured p95 of a chat or analysis step.', '300', 1, 3600, NULL),
+    ('run.step-timeout-seconds.batch', '1800', 'int', 'Per-step ceiling in the BATCH lane — room for queue wait behind ~25 image generations at the measured p50 of 67 s.', '1800', 1, 14400, NULL),
+ ('run.fan-out-max', '10', 'int', 'Hard cap on forEach expansion — protects the MLX budget.', '10', 1, 1000, NULL),
+ ('run.blueprint-cache-size', '100', 'int', 'Maximum published blueprint versions parsed and cached per service instance; 0 disables the cache.', '100', 0, 10000, NULL),
+ ('run.outcome-listener.concurrency', '2', 'int', 'Outcome listener consumer count per service instance, adjusted live on its virtual-thread executor.', '2', 1, 64, NULL),
+ ('marketplace.third-party-enabled', 'false', 'boolean', 'Opens publishing to non-orazaka publishers.', 'false', NULL, NULL, NULL),
+ ('retention.run-days', '90', 'int', 'Days a finished run and its artefacts are kept (GDPR / Loi 25).', '90', 1, 3650, NULL),
  -- SENSITIVE runs age out sooner, and an installation may lower this further but never raise it:
  -- the sweeper takes the minimum of the two, so a pack cannot buy itself a longer memory (ADR-051).
- ('retention.sensitive-run-days',      '30',    'int',     'Retention window for runs of a SENSITIVE pack. An installation may lower it, never raise it.'),
- ('retention.revoked-installation-days','30',   'int',     'Grace period before an uninstalled Studio loses its saved configuration.')
-ON CONFLICT (config_key) DO NOTHING;
+ ('retention.sensitive-run-days', '30', 'int', 'Retention window for runs of a SENSITIVE pack. An installation may lower it, never raise it.', '30', 1, 3650, NULL),
+ ('retention.revoked-installation-days', '30', 'int', 'Grace period before an uninstalled Studio loses its saved configuration.', '30', 0, 3650, NULL)
+ON CONFLICT (config_key) DO UPDATE SET
+    default_value = EXCLUDED.default_value,
+    min_value = EXCLUDED.min_value,
+    max_value = EXCLUDED.max_value,
+    max_items = EXCLUDED.max_items;
 
 -- ── Catalogue content: none. It ships as bundles (ADR-037 phase D) ──────────
 --
@@ -611,15 +635,21 @@ CREATE TABLE IF NOT EXISTS studio_webhook_delivery (
 );
 CREATE INDEX IF NOT EXISTS idx_studio_webhook_delivery_due ON studio_webhook_delivery (next_attempt_at) WHERE status = 'PENDING';
 
-INSERT INTO studio_runtime_config (config_key, config_value, value_type, description) VALUES
- ('webhook.max-attempts',          '8',    'int', 'Deliveries tried before a webhook is DEAD.'),
- ('webhook.backoff-seconds',       '30',   'int', 'Wait after the first failed delivery; it doubles at each attempt.'),
- ('webhook.backoff-cap-seconds',   '3600', 'int', 'Longest wait between two attempts.'),
- ('webhook.timeout-seconds',       '10',   'int', 'How long a receiver has to answer.'),
- ('webhook.batch-size',            '20',   'int', 'Deliveries taken per sweep and instance.'),
- ('webhook.max-endpoints-per-actor','5',    'int', 'Webhook endpoints one actor may hold.'),
- ('webhook.rotation-grace-hours',  '24',   'int', 'How long the previous secret keeps signing next to the new one.')
-ON CONFLICT (config_key) DO NOTHING;
+INSERT INTO studio_runtime_config
+    (config_key, config_value, value_type, description, default_value, min_value, max_value, max_items)
+VALUES
+ ('webhook.max-attempts', '8', 'int', 'Deliveries tried before a webhook is DEAD.', '8', 1, 100, NULL),
+ ('webhook.backoff-seconds', '30', 'int', 'Wait after the first failed delivery; it doubles at each attempt.', '30', 1, 86400, NULL),
+ ('webhook.backoff-cap-seconds', '3600', 'int', 'Longest wait between two attempts.', '3600', 1, 604800, NULL),
+ ('webhook.timeout-seconds', '10', 'int', 'How long a receiver has to answer.', '10', 1, 300, NULL),
+ ('webhook.batch-size', '20', 'int', 'Deliveries taken per sweep and instance.', '20', 1, 1000, NULL),
+ ('webhook.max-endpoints-per-actor', '5', 'int', 'Webhook endpoints one actor may hold.', '5', 1, 100, NULL),
+ ('webhook.rotation-grace-hours', '24', 'int', 'How long the previous secret keeps signing next to the new one.', '24', 0, 720, NULL)
+ON CONFLICT (config_key) DO UPDATE SET
+    default_value = EXCLUDED.default_value,
+    min_value = EXCLUDED.min_value,
+    max_value = EXCLUDED.max_value,
+    max_items = EXCLUDED.max_items;
 
 -- RUN EVENTS (orazaka#241, ADR-083 slice 10): a run's changes are numbered, in the database, so every instance and
 -- every reconnecting client agrees on the numbers — `GET /runs/{id}/events` sends the number as the SSE `id`, and a

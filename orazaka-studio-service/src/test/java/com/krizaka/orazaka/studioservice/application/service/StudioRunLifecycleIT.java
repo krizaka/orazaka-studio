@@ -1182,8 +1182,9 @@ class StudioRunLifecycleIT {
       "[studio#61] an identical run answers from the recorded result: no hold, no dispatch")
   void anIdenticalRunAnswersFromTheRecordedResult() {
     jdbcTemplate.update(
-        "INSERT INTO studio_runtime_config (config_key, config_value, value_type)"
-            + " VALUES ('run.result-cache.studios', ?, 'list')"
+        "INSERT INTO studio_runtime_config"
+            + " (config_key, config_value, value_type, description, default_value, max_items)"
+            + " VALUES ('run.result-cache.studios', ?, 'list', 'Cacheable Studios', '', 100)"
             + " ON CONFLICT (config_key) DO UPDATE SET config_value = EXCLUDED.config_value",
         STUDIO_KEY);
     try {

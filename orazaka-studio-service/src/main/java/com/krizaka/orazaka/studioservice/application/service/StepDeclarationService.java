@@ -123,9 +123,7 @@ public class StepDeclarationService {
             """,
             (rs, rowNum) ->
                 new DeclarationRow(
-                    rs.getString("scope_guard"),
-                    rs.getString("safety"),
-                    rs.getString("region")),
+                    rs.getString("scope_guard"), rs.getString("safety"), rs.getString("region")),
             installationId,
             studioKey)
         .stream()

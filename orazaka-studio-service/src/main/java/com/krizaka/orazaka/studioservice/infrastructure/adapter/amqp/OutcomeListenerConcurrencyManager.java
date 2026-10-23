@@ -24,6 +24,12 @@ class OutcomeListenerConcurrencyManager {
         Objects.requireNonNull(runtimeConfigService, "StudioRuntimeConfigService required");
   }
 
+  /**
+   * The consumer count last applied; the container exposes setters only, so this is the one source
+   * of it.
+   */
+  private volatile int applied = -1;
+
   @Scheduled(fixedDelay = 5000)
   void refreshConcurrency() {
     if (!(registry.getListenerContainer(LISTENER_ID)
@@ -32,17 +38,18 @@ class OutcomeListenerConcurrencyManager {
     }
     int configured =
         Math.max(1, runtimeConfigService.intValue(CONCURRENCY_KEY, CONCURRENCY_FALLBACK));
-    int current = container.getConcurrentConsumers();
-    int maximum = container.getMaxConcurrentConsumers();
-    boolean maximumRaised = configured > maximum;
-    if (maximumRaised) {
-      container.setMaxConcurrentConsumers(configured);
+    if (configured == applied) {
+      return;
     }
-    if (configured != current) {
+    // The count may never exceed the maximum: raise the maximum first when growing, lower the count
+    // first when shrinking.
+    if (configured > applied) {
+      container.setMaxConcurrentConsumers(configured);
       container.setConcurrentConsumers(configured);
-    }
-    if (!maximumRaised && configured != maximum) {
+    } else {
+      container.setConcurrentConsumers(configured);
       container.setMaxConcurrentConsumers(configured);
     }
+    applied = configured;
   }
 }

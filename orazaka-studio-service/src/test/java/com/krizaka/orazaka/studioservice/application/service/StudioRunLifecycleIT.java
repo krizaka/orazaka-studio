@@ -38,6 +38,12 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -52,6 +58,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 import org.testcontainers.utility.MountableFile;
@@ -749,6 +756,68 @@ class StudioRunLifecycleIT {
             String.class,
             firstJob);
     assertEquals("a", stored, "the first outcome wins; a replay cannot overwrite it");
+  }
+
+  /**
+   * Two outcomes of one run, applied by two consumers at once (orazaka-studio#73).
+   *
+   * <p>The outcome listener runs more than one consumer, so two fan-out items of the same run can
+   * finish in two transactions that overlap. Each marks its own row and then reads the run's rows;
+   * if neither saw the other's mark, both would conclude a sibling is still running and the run's
+   * next steps would never be dispatched — it would hang until the sweeper failed it. What
+   * serialises them is the step trigger raising {@code studio_run.event_seq}: marking a step takes
+   * the run's row lock until commit, so the second waits and then reads the first's mark. This test
+   * holds the first transaction open so the overlap is certain, and is the alarm the day that lock
+   * goes away.
+   */
+  @Test
+  @DisplayName("[studio#73] two sibling outcomes applied at once still advance the run")
+  void concurrentSiblingOutcomesAdvanceTheRun() throws Exception {
+    startRun();
+    List<String> fanOut = List.copyOf(executor.dispatched);
+    assertEquals(2, fanOut.size(), "two photos fan out into two siblings");
+    TransactionTemplate transaction =
+        new TransactionTemplate(context.getBean(PlatformTransactionManager.class));
+    CountDownLatch firstApplied = new CountDownLatch(1);
+    CountDownLatch commitFirst = new CountDownLatch(1);
+    ExecutorService consumers = Executors.newFixedThreadPool(2);
+    try {
+      Future<?> first =
+          consumers.submit(
+              () ->
+                  transaction.executeWithoutResult(
+                      status -> {
+                        sagaService.applyOutcome(fanOut.getFirst(), Map.of("content", "a"), null);
+                        firstApplied.countDown();
+                        try {
+                          commitFirst.await();
+                        } catch (InterruptedException interrupted) {
+                          Thread.currentThread().interrupt();
+                          throw new IllegalStateException(interrupted);
+                        }
+                      }));
+      assertTrue(firstApplied.await(30, TimeUnit.SECONDS), "the first outcome was not applied");
+      Future<?> second =
+          consumers.submit(
+              () -> sagaService.applyOutcome(fanOut.get(1), Map.of("content", "b"), null));
+      try {
+        // The second waits on the run's row lock until the first commits.
+        second.get(2, TimeUnit.SECONDS);
+      } catch (TimeoutException waitingForTheFirst) {
+        // Expected: the second outcome is queued behind the run's lock.
+      }
+      commitFirst.countDown();
+      first.get(30, TimeUnit.SECONDS);
+      second.get(30, TimeUnit.SECONDS);
+    } finally {
+      commitFirst.countDown();
+      consumers.shutdownNow();
+    }
+
+    assertEquals(
+        4,
+        executor.dispatched.size(),
+        "both siblings succeeded, so caption and showcase must each be dispatched once");
   }
 
   // ── §15: failure releases, never settles ──────────────────────────────────

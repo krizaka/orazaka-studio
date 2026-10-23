@@ -83,6 +83,7 @@ public class RunSagaService {
    * by advancing it here, so each needs the other and only a late lookup breaks the circle.
    */
   private final ObjectProvider<StudioRunService> runs;
+
   private final Map<BlueprintKey, Blueprint> publishedBlueprints =
       new LinkedHashMap<>(16, 0.75f, true);
 
@@ -174,6 +175,10 @@ public class RunSagaService {
       return;
     }
     StepRef ref = located.get();
+    // Read with the step, before the mark below takes the run's row lock (the event_seq trigger).
+    // It cannot be stale in a way that matters: every path that ends a run (fail, cancel, sweep)
+    // also moves its RUNNING steps out of RUNNING, so a run ended meanwhile makes the guarded
+    // UPDATE below apply nothing, and this outcome returns before reading the run again.
     RunRow run = ref.run();
     Blueprint blueprint =
         findBlueprint(run.studioKey(), run.blueprintVersion(), ref.blueprintCacheSize())
@@ -273,8 +278,8 @@ public class RunSagaService {
       return false;
     }
 
-    RunScope scope = buildScope(run, blueprint, ref.installationConfig());
-    scope = scope.withItem(itemFor(step, scope, ref.ordinal()));
+    RunScope base = buildScope(run, blueprint, ref.installationConfig());
+    RunScope scope = base.withItem(itemFor(step, base, ref.ordinal()));
     if (step.kind() == StepKind.STUDIO) {
       return recalled(run, step, ref, scope);
     }
@@ -393,14 +398,12 @@ public class RunSagaService {
     advance(run, blueprint, installationConfig(run.installationId()));
   }
 
-  private void advance(
-      RunRow run, Blueprint blueprint, Map<String, String> installationConfig) {
+  private void advance(RunRow run, Blueprint blueprint, Map<String, String> installationConfig) {
     if (run == null || isTerminal(run.status())) {
       return;
     }
     if (blueprint == null) {
-      throw new IllegalStateException(
-          "run " + run.id() + " pins a version that no longer parses");
+      throw new IllegalStateException("run " + run.id() + " pins a version that no longer parses");
     }
 
     StepSnapshot snapshot = stepSnapshot(run, blueprint);
@@ -413,21 +416,18 @@ public class RunSagaService {
       if (snapshot.states().get(step.id()) != RunStepStatus.FAILED) {
         continue;
       }
-      FailureCause cause =
-          snapshot.causes().getOrDefault(step.id(), FailureCause.EXECUTOR_FAULT);
+      FailureCause cause = snapshot.causes().getOrDefault(step.id(), FailureCause.EXECUTOR_FAULT);
       if (step.onErrorFor(cause) != ErrorPolicy.SKIP) {
         failRun(
             run,
             blueprint,
-            snapshot.failureMessages().getOrDefault(
-                step.id(), "step '" + step.id() + "' failed"),
+            snapshot.failureMessages().getOrDefault(step.id(), "step '" + step.id() + "' failed"),
             cause);
         return;
       }
     }
 
-    Map<String, String> effectiveConfig =
-        effectiveConfig(run, blueprint, installationConfig);
+    Map<String, String> effectiveConfig = effectiveConfig(run, blueprint, installationConfig);
     RunScope scope = buildScope(run, blueprint, snapshot, effectiveConfig);
     List<BlueprintStep> ready =
         blueprint.steps().stream()
@@ -813,12 +813,8 @@ public class RunSagaService {
   }
 
   private RunScope buildScope(
-      RunRow run,
-      Blueprint blueprint,
-      StepSnapshot snapshot,
-      Map<String, String> effectiveConfig) {
-    return new RunScope(
-        run.inputs(), effectiveConfig, snapshot.outputs(), null, Map.of());
+      RunRow run, Blueprint blueprint, StepSnapshot snapshot, Map<String, String> effectiveConfig) {
+    return new RunScope(run.inputs(), effectiveConfig, snapshot.outputs(), null, Map.of());
   }
 
   /**
@@ -1163,8 +1159,7 @@ public class RunSagaService {
         .findFirst();
   }
 
-  private Optional<Blueprint> findBlueprint(
-      String studioKey, String version, int maximumEntries) {
+  private Optional<Blueprint> findBlueprint(String studioKey, String version, int maximumEntries) {
     if (maximumEntries <= 0) {
       return blueprintRepository.find(studioKey, version);
     }

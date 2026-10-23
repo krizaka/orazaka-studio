@@ -19,8 +19,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import jdk.jfr.Recording;
 import javax.sql.DataSource;
+import jdk.jfr.Recording;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -88,7 +88,7 @@ class RunOverheadMeasurementIT {
       """
       {"studioKey":"m1-hot-path","version":"1.0.0","steps":[
        {"id":"stage1","kind":"CAPABILITY","featureKey":"orazaka.core.media.image","dependsOn":[],
-        "inputs":{"prompt":"{{item}}"},"forEach":"{{inputs.photos}}","out":"stage1",
+        "inputs":{"prompt":"{{item}}"},"forEach":"{{inputs.photos}}","maxParallel":20,"out":"stage1",
         "onError":"FAIL","maxAttempts":1,"timeout":"PT2M"},
        {"id":"stage2","kind":"CAPABILITY","featureKey":"orazaka.core.media.image","dependsOn":["stage1"],
         "inputs":{"prompt":"{{inputs.photos}}"},"out":"stage2","onError":"FAIL","maxAttempts":1,"timeout":"PT2M"},
@@ -278,7 +278,11 @@ class RunOverheadMeasurementIT {
         if (sample == warmups - 1) {
           List<String> startStatements = counter.end();
           long declarationReads =
-              startStatements.stream().filter(sql -> sql.contains("FROM pack_studio")).count();
+              // The pack's declarations (scope guard, safety), not every pack_studio join: the
+              // start also reads the regulatory class once, which is not a dispatch read.
+              startStatements.stream()
+                  .filter(sql -> sql.contains("p.scope_guard") || sql.contains("p.safety"))
+                  .count();
           assertEquals(1, declarationReads, "fan-out dispatch reads pack declarations once");
           queryCounts.add("fanout-start-declaration-reads|" + declarationReads);
         }
@@ -316,8 +320,7 @@ class RunOverheadMeasurementIT {
         }
 
         for (int i = 0; i < fanOutJobs.size(); i++) {
-          boolean record =
-              sample == warmups - 1 && (i == 0 || i == fanOutJobs.size() - 1);
+          boolean record = sample == warmups - 1 && (i == 0 || i == fanOutJobs.size() - 1);
           if (record) {
             counter.begin();
           }

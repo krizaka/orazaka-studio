@@ -20,12 +20,20 @@ class OutcomeListenerConcurrencyManagerTest {
     StudioRuntimeConfigService config = mock(StudioRuntimeConfigService.class);
     when(registry.getListenerContainer("studio-job-outcome")).thenReturn(container);
     when(config.intValue("run.outcome-listener.concurrency", 2)).thenReturn(4);
-    when(container.getConcurrentConsumers()).thenReturn(1);
-    when(container.getMaxConcurrentConsumers()).thenReturn(1);
+    OutcomeListenerConcurrencyManager manager =
+        new OutcomeListenerConcurrencyManager(registry, config);
 
-    new OutcomeListenerConcurrencyManager(registry, config).refreshConcurrency();
-
+    manager.refreshConcurrency();
     verify(container).setMaxConcurrentConsumers(4);
     verify(container).setConcurrentConsumers(4);
+
+    // The same value again changes nothing; a lower one lowers the count before the maximum.
+    manager.refreshConcurrency();
+    when(config.intValue("run.outcome-listener.concurrency", 2)).thenReturn(1);
+    manager.refreshConcurrency();
+    org.mockito.InOrder order = org.mockito.Mockito.inOrder(container);
+    order.verify(container).setConcurrentConsumers(1);
+    order.verify(container).setMaxConcurrentConsumers(1);
+    verify(container, org.mockito.Mockito.times(1)).setConcurrentConsumers(4);
   }
 }

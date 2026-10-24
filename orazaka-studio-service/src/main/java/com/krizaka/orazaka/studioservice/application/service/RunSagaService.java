@@ -874,11 +874,16 @@ public class RunSagaService {
       outputs.put(output.key(), value);
     }
 
+    // A run a step declared not reusable (its answer depends on more than its inputs, such as the
+    // day the
+    // clock gave) keeps no fingerprint, so the result cache never serves it (orazaka-studio#80).
     jdbcTemplate.update(
-        "UPDATE studio_run SET status = ?, outputs = ?::jsonb, finished_at = now()"
+        "UPDATE studio_run SET status = ?, outputs = ?::jsonb, finished_at = now(),"
+            + " input_fingerprint = CASE WHEN ? THEN input_fingerprint END"
             + " WHERE id = ? AND finished_at IS NULL",
         RunStatus.SUCCEEDED.name(),
         columns.json(outputs),
+        reusable(scope),
         run.id());
 
     if (run.parentRunId() == null) {
@@ -891,6 +896,29 @@ public class RunSagaService {
       applyOutcome(run.id().toString(), outputs, Map.of(), null, null, null);
     }
   }
+
+  /**
+   * Whether a succeeded run may answer again from the result cache: no step output declares {@value
+   * #RESULT_CACHEABLE} {@code false}.
+   *
+   * <p>The fingerprint is the run's inputs. A step that read something else that changes (a Studio
+   * whose day comes from the clock when the caller gives none) says so in its output, and the run
+   * is then never a cache source. Over a fan-out, any item declining is enough.
+   */
+  static boolean reusable(RunScope scope) {
+    return scope.steps().values().stream().noneMatch(RunSagaService::declinesResultCache);
+  }
+
+  private static boolean declinesResultCache(Object output) {
+    return switch (output) {
+      case Map<?, ?> fields -> Boolean.FALSE.equals(fields.get(RESULT_CACHEABLE));
+      case List<?> items -> items.stream().anyMatch(RunSagaService::declinesResultCache);
+      case null, default -> false;
+    };
+  }
+
+  /** The step output field by which a step keeps its run out of the result cache. */
+  static final String RESULT_CACHEABLE = "resultCacheable";
 
   /**
    * Ends a run that failed, settling or releasing according to the <b>declared</b> cause.

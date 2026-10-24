@@ -86,7 +86,9 @@ installation configuration) answers from the recorded result: no hold, no dispat
 `cachedFrom` names the run that computed it (orazaka-studio#61). The schema ships it with
 `compliance-check` (ADR-089 §4): its ruleset is resolved from the document's kind and `asOf`, so the
 recorded report, judgment included, is the answer again. A new pack version is a new Studio version
-and computes afresh.
+and computes afresh. A step whose answer depends on more than the inputs returns `resultCacheable:
+false` in its output (compliance-check, when its day came from the clock rather than from `asOf` or
+the document): the run then keeps no fingerprint and is never served from the cache.
 
 ## Admin runtime settings
 

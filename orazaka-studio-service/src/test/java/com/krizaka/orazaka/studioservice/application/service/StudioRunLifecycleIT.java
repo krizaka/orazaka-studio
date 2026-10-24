@@ -1407,7 +1407,26 @@ class StudioRunLifecycleIT {
    * <p>By step id, so the same driver plays the blueprint orazaka-packs ships today, whatever its
    * version: a skipped step is never dispatched, and an unknown one fails the test loudly.
    */
+  @Test
+  @DisplayName("[studio#80] a run whose day came from the clock is never served from the cache")
+  void aRunThatDeclinesTheCacheIsComputedAgain() {
+    UUID installation = installationService.install(COMPLIANCE_KEY, ACTOR, Map.of(), "fr").id();
+    Map<String, Object> inputs = Map.of("document", "Bail de logement.", "jurisdiction", "QC");
+    RunDetail first = runService.start(installation, ACTOR, inputs);
+    completeEveryStep(first, false);
+    assertEquals(RunStatus.SUCCEEDED, runService.find(first.id(), ACTOR).orElseThrow().status());
+
+    RunDetail again = runService.start(installation, ACTOR, Map.copyOf(inputs));
+
+    assertEquals(RunStatus.RUNNING, again.status(), "computed again: its day is another day");
+    assertNull(again.cachedFrom());
+  }
+
   private void completeEveryStep(RunDetail run) {
+    completeEveryStep(run, true);
+  }
+
+  private void completeEveryStep(RunDetail run, boolean cacheable) {
     Map<String, Object> identification =
         Map.ofEntries(
             Map.entry("declaredKind", "LEASE"),
@@ -1460,9 +1479,16 @@ class StudioRunLifecycleIT {
                     "needsJudgment",
                     true,
                     "rulesetVersion",
-                    "2024-02-21"),
+                    "2024-02-21",
+                    "resultCacheable",
+                    cacheable),
             "judge", Map.of("content", "[]"),
-            "report", Map.of("report", report, "reportJson", reportJson, "outcome", "CHECKED"));
+            "report",
+                Map.of(
+                    "report", report,
+                    "reportJson", reportJson,
+                    "outcome", "CHECKED",
+                    "resultCacheable", cacheable));
     for (int round = 0; round < 10; round++) {
       List<RunStepView> running =
           runService.find(run.id(), ACTOR).orElseThrow().steps().stream()

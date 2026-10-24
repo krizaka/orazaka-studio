@@ -84,6 +84,8 @@ class StudioRunLifecycleIT {
   private static final String STUDIO_PASSWORD = "orazaka_studio_pass";
   private static final String ACTOR = "550e8400-e29b-41d4-a716-446655440002";
   private static final String STUDIO_KEY = "trade-showcase";
+  private static final String COMPLIANCE_PACK = "document-validation";
+  private static final String COMPLIANCE_KEY = "compliance-check";
 
   @SuppressWarnings("resource")
   private static final PostgreSQLContainer<?> POSTGRES =
@@ -142,17 +144,26 @@ class StudioRunLifecycleIT {
    * actually ships than against a simplified copy that can drift away from it.
    */
   private static void installCatalogueFixture() {
-    Path bundle = Workspace.packs(Path.of(System.getProperty("user.dir"))).resolve(STUDIO_KEY);
+    installStudio(STUDIO_KEY, STUDIO_KEY, "Vitrine Artisan");
+    installStudio(COMPLIANCE_PACK, COMPLIANCE_KEY, "Contrôle de conformité");
+  }
+
+  /**
+   * One Studio of a shipped bundle: its row and the blueprint file it ships, as an install writes
+   * them.
+   */
+  private static void installStudio(String packDir, String studioKey, String label) {
+    Path bundle = Workspace.packs(Path.of(System.getProperty("user.dir"))).resolve(packDir);
     JsonNode blueprint;
     try {
       blueprint =
           new ObjectMapper()
               .readTree(
                   Files.readString(
-                      bundle.resolve("studios").resolve(STUDIO_KEY).resolve("blueprint.json")));
+                      bundle.resolve("studios").resolve(studioKey).resolve("blueprint.json")));
     } catch (java.io.IOException unreadable) {
       throw new IllegalStateException(
-          "The " + STUDIO_KEY + " bundle is what this suite runs; it must be readable", unreadable);
+          "The " + studioKey + " bundle is what this suite runs; it must be readable", unreadable);
     }
 
     jdbcTemplate.update(
@@ -160,19 +171,19 @@ class StudioRunLifecycleIT {
             + " entitlement_key, status, publisher_id, latest_version, sort_weight)"
             + " VALUES (?, ?, ?, ?, ?, 'FREE', ?, 'PUBLISHED', 'orazaka', ?, 100)"
             + " ON CONFLICT (studio_key) DO NOTHING",
-        STUDIO_KEY,
-        "Vitrine Artisan",
-        "Vos chantiers deviennent une vitrine qui vend.",
+        studioKey,
+        label,
+        label,
         "trades",
         "studio",
-        "studio." + STUDIO_KEY,
+        "studio." + studioKey,
         blueprint.path("version").asString());
     jdbcTemplate.update(
         "INSERT INTO studio_blueprint (studio_key, version, status, definition, input_schema,"
             + " config_schema, estimated_credits, changelog, published_at, created_by)"
             + " VALUES (?, ?, 'PUBLISHED', ?::jsonb, ?::jsonb, ?::jsonb, ?, ?, now(), 'system')"
             + " ON CONFLICT (studio_key, version) DO NOTHING",
-        STUDIO_KEY,
+        studioKey,
         blueprint.path("version").asString(),
         blueprint.path("definition").toString(),
         blueprint.path("inputSchema").toString(),
@@ -1292,6 +1303,7 @@ class StudioRunLifecycleIT {
   @DisplayName(
       "[studio#61] an identical run answers from the recorded result: no hold, no dispatch")
   void anIdenticalRunAnswersFromTheRecordedResult() {
+    String shipped = cacheList();
     jdbcTemplate.update(
         "INSERT INTO studio_runtime_config"
             + " (config_key, config_value, value_type, description, default_value, max_items)"
@@ -1338,8 +1350,136 @@ class StudioRunLifecycleIT {
       assertNull(changed.cachedFrom());
     } finally {
       jdbcTemplate.update(
-          "DELETE FROM studio_runtime_config WHERE config_key = 'run.result-cache.studios'");
+          "UPDATE studio_runtime_config SET config_value = ?"
+              + " WHERE config_key = 'run.result-cache.studios'",
+          shipped);
     }
+  }
+
+  /** The value of {@code run.result-cache.studios} as the database holds it. */
+  private static String cacheList() {
+    return jdbcTemplate.queryForObject(
+        "SELECT config_value FROM studio_runtime_config"
+            + " WHERE config_key = 'run.result-cache.studios'",
+        String.class);
+  }
+
+  @Test
+  @DisplayName(
+      "[studio#80] compliance-check is cached as shipped: an identical run makes no model call")
+  void anIdenticalComplianceCheckAnswersFromTheRecordedResultWithNoModelCall() {
+    assertTrue(
+        java.util.Arrays.stream(cacheList().split(","))
+            .map(String::strip)
+            .toList()
+            .contains(COMPLIANCE_KEY),
+        "ADR-089 §4: compliance-check is in run.result-cache.studios as the schema ships it");
+    UUID installation = installationService.install(COMPLIANCE_KEY, ACTOR, Map.of(), "fr").id();
+    Map<String, Object> inputs =
+        Map.of(
+            "document",
+            "Bail de logement. Loyer mensuel : 950 $.",
+            "jurisdiction",
+            "QC",
+            "asOf",
+            "2026-10-22");
+    RunDetail first = runService.start(installation, ACTOR, inputs);
+    completeEveryStep(first);
+    assertEquals(RunStatus.SUCCEEDED, runService.find(first.id(), ACTOR).orElseThrow().status());
+    int dispatched = executor.dispatched.size();
+    int holds = credits.holds;
+
+    RunDetail again = runService.start(installation, ACTOR, Map.copyOf(inputs));
+
+    assertEquals(RunStatus.SUCCEEDED, again.status(), "answered at once");
+    assertEquals(first.id(), again.cachedFrom(), "from the run that computed it");
+    assertEquals(dispatched, executor.dispatched.size(), "no step dispatched: no model call");
+    assertEquals(holds, credits.holds, "no credit held");
+    assertEquals(
+        runService.find(first.id(), ACTOR).orElseThrow().outputs(),
+        again.outputs(),
+        "the recorded report, judgment included");
+  }
+
+  /**
+   * Answers every step of a compliance-check run until it ends, with what its executor returns.
+   *
+   * <p>By step id, so the same driver plays the blueprint orazaka-packs ships today, whatever its
+   * version: a skipped step is never dispatched, and an unknown one fails the test loudly.
+   */
+  private void completeEveryStep(RunDetail run) {
+    Map<String, Object> identification =
+        Map.ofEntries(
+            Map.entry("declaredKind", "LEASE"),
+            Map.entry("detectedKind", "qc-residential-lease"),
+            Map.entry("kindUsed", "qc-residential-lease"),
+            Map.entry("kindSource", "DETECTED"),
+            Map.entry("kindEvidence", List.of()),
+            Map.entry("kindMismatch", false),
+            Map.entry("jurisdiction", "QC"),
+            Map.entry("asOf", "2026-10-22"),
+            Map.entry("asOfSource", "INPUT"),
+            Map.entry("languages", List.of("fr")),
+            Map.entry("outcome", "CHECK"));
+    Map<String, Object> report =
+        Map.of(
+            "contract",
+            "2.0",
+            "outcome",
+            "CHECKED",
+            "identification",
+            identification,
+            "asOf",
+            "2026-10-22",
+            "summary",
+            Map.of("byVerdict", Map.of(), "blockingFailures", 0, "rulesEvaluated", 0),
+            "findings",
+            List.of());
+    String reportJson = new ObjectMapper().writeValueAsString(report);
+    Map<String, Map<String, Object>> answers =
+        Map.of(
+            "identify",
+                Map.of(
+                    "outcome",
+                    "CHECK",
+                    "needsClassify",
+                    false,
+                    "classifyPrompt",
+                    "",
+                    "identificationJson",
+                    "{}"),
+            "resolve", Map.of("outcome", "CHECK", "resolvedJson", "{}"),
+            "screen",
+                Map.of(
+                    "screenedJson",
+                    "{}",
+                    "judgmentPrompt",
+                    "Règles",
+                    "judgmentCount",
+                    1,
+                    "needsJudgment",
+                    true,
+                    "rulesetVersion",
+                    "2024-02-21"),
+            "judge", Map.of("content", "[]"),
+            "report", Map.of("report", report, "reportJson", reportJson, "outcome", "CHECKED"));
+    for (int round = 0; round < 10; round++) {
+      List<RunStepView> running =
+          runService.find(run.id(), ACTOR).orElseThrow().steps().stream()
+              .filter(step -> step.status() == RunStepStatus.RUNNING)
+              .toList();
+      if (running.isEmpty()) {
+        return;
+      }
+      running.forEach(
+          step ->
+              sagaService.applyOutcome(
+                  step.jobId(),
+                  Objects.requireNonNull(
+                      answers.get(step.stepId()), "no answer for " + step.stepId()),
+                  null));
+    }
+    throw new AssertionError("the run did not end in ten rounds");
   }
 
   @Test

@@ -81,6 +81,13 @@ each advance. The five-step/20-item fan-out benchmark is `RunOverheadMeasurement
 latencies, JFR profile, and `EXPLAIN ANALYZE` plans for the job lookup and step snapshot to
 `target/m1-saga-hot-path.txt` and `target/m1-saga-hot-path.jfr`.
 
+`run.result-cache.studios` lists the Studios whose identical run (same actor, Studio version, inputs and
+installation configuration) answers from the recorded result: no hold, no dispatch, no model call, and
+`cachedFrom` names the run that computed it (orazaka-studio#61). The schema ships it with
+`compliance-check` (ADR-089 §4): its ruleset is resolved from the document's kind and `asOf`, so the
+recorded report, judgment included, is the answer again. A new pack version is a new Studio version
+and computes afresh.
+
 ## Admin runtime settings
 
 Both runtime-config endpoints require the `ADMIN` role. The list response includes each setting's

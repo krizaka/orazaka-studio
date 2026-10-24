@@ -410,8 +410,10 @@ public class StudioRunService {
    * <p>Exact only: the same actor, the same Studio version, the same inputs and configuration, by
    * fingerprint — never a « similar » document. The new run is born SUCCEEDED with the original's
    * outputs and names it in {@code cached_from}; it holds no credits, dispatches nothing and calls
-   * no model. Enabled per Studio by the operator ({@value #RESULT_CACHE_STUDIOS_KEY}), because only
-   * a deterministic Studio may answer twice with one result.
+   * no model. Enabled per Studio ({@value #RESULT_CACHE_STUDIOS_KEY}), because only a Studio whose
+   * result is a function of its inputs and version may answer twice with one result: a
+   * deterministic one, or compliance-check, listed as shipped (ADR-089 §4: its ruleset is pinned by
+   * kind and date).
    */
   private RunDetail answerFromCache(
       UUID original, UUID installationId, String studioKey, String version, String actorId) {

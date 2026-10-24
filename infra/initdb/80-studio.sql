@@ -542,7 +542,7 @@ INSERT INTO studio_runtime_config
     (config_key, config_value, value_type, description, default_value, min_value, max_value, max_items)
 VALUES
  ('run.max-concurrent-per-actor', '2', 'int', 'Concurrent runs one actor may hold.', '2', 1, 100, NULL),
- ('run.result-cache.studios', '', 'list', 'Studios whose identical runs (same actor, version, inputs, configuration) answer from the recorded result, with no hold and no model call (orazaka-studio#61). Deterministic Studios only; empty = off.', '', NULL, NULL, 100),
+ ('run.result-cache.studios', 'compliance-check', 'list', 'Studios whose identical runs (same actor, version, inputs, configuration) answer from the recorded result, with no hold and no model call (orazaka-studio#61). Only a Studio whose result is a function of its inputs and version: a deterministic one, or compliance-check, whose ruleset is pinned by (kind, asOf) and whose judgment is recorded (ADR-089 §4). Empty = off.', 'compliance-check', NULL, NULL, 100),
  ('run.max-seconds', '14400', 'int', 'Longest a run may stay in flight (RUNNING) before the sweeper fails it and frees its hold and its slot.', '14400', 60, 86400, NULL),
  ('run.concurrency-retry-seconds', '15', 'int', 'Retry-After (seconds) of the 429 answered when an actor holds its concurrent runs.', '15', 1, 300, NULL),
  ('run.max-streams-per-actor', '5', 'int', 'Run event streams (SSE) one actor may hold open per instance.', '5', 1, 100, NULL),

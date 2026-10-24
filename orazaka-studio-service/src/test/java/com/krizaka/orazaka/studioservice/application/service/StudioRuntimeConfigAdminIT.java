@@ -106,7 +106,9 @@ class StudioRuntimeConfigAdminIT {
             config -> {
               // The seeded default, not the live value: another test of this class edits the list,
               // and the order of tests is not part of the contract.
-              assertThat(config.defaultValue()).isEqualTo(List.of());
+              // ADR-089 §4: compliance-check ships cached (its ruleset and judgment are pinned by
+              // version).
+              assertThat(config.defaultValue()).isEqualTo(List.of("compliance-check"));
               assertThat(config.bounds().maxItems()).isEqualTo(100);
             });
   }

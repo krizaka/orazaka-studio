@@ -2,6 +2,7 @@ package com.krizaka.orazaka.studioservice.architecture;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.krizaka.orazaka.studio.domain.model.RunScope;
 import com.krizaka.orazaka.test.architecture.SqlBoundaryRules;
 import com.krizaka.orazaka.test.architecture.Workspace;
 import java.io.IOException;
@@ -95,7 +96,8 @@ class BlueprintFitnessTest {
    * capability row, seeded for the platform's own capabilities and written by the installer from a
    * pack's manifest — so this reads data on both sides and a step is checkable in both directions.
    */
-  private record Contract(Set<String> inputs, Set<String> outputs) {}
+  private record Contract(
+      Set<String> inputs, Set<String> outputs, Map<String, String> structuredInputs) {}
 
   /** A seeded capability row with its two contract literals, in the seed's dollar-quoted form. */
   private static final Pattern SEEDED_CONTRACT =
@@ -407,6 +409,63 @@ class BlueprintFitnessTest {
             + String.join("\n  ", ignored));
   }
 
+  /**
+   * [studio#83] An input its capability declares as an object or a list reaches it as one.
+   *
+   * <p>The bug was a type lost between steps: {@code RunScope} kept a lone placeholder's list but
+   * rendered an object as « key: value » text, so tenant-screening-qc's {@code "subject":
+   * "{{inputs.subject}}"} reached a check that declares {@code subject} an object as prose it must
+   * refuse. Only a template that is one lone placeholder can carry structure — a placeholder inside
+   * a sentence is text by design — so every structured input of a shipped step is resolved here,
+   * through the real scope, over a value of the declared shape, and must arrive with that shape.
+   */
+  @Test
+  @DisplayName("[studio#83] an input declared object or array reaches its step as one, never text")
+  void structuredInputsReachTheirStepAsStructure() throws IOException {
+    Map<String, Contract> contracts = declaredContracts();
+    List<String> flattened = new ArrayList<>();
+    int inspected = 0;
+    for (JsonNode blueprint : bundledBlueprints()) {
+      String studioKey = blueprint.path("definition").path("studioKey").asString("?");
+      for (JsonNode step : blueprint.path("definition").path("steps")) {
+        Contract contract = contracts.get(step.path("featureKey").asString(""));
+        if (contract == null) {
+          continue;
+        }
+        for (Map.Entry<String, String> declared : contract.structuredInputs().entrySet()) {
+          JsonNode template = step.path("inputs").path(declared.getKey());
+          if (!template.isString()) {
+            continue;
+          }
+          inspected++;
+          boolean list = "array".equals(declared.getValue());
+          Object sample = list ? List.of("a", "b") : Map.of("k", "v", "other", "w");
+          Object resolved = holding(template.asString(), sample).resolveValue(template.asString());
+          if (list ? !(resolved instanceof List<?>) : !(resolved instanceof Map<?, ?>)) {
+            flattened.add(
+                studioKey
+                    + "."
+                    + step.path("id").asString("?")
+                    + " passes '"
+                    + declared.getKey()
+                    + "' ("
+                    + declared.getValue()
+                    + ") as "
+                    + template
+                    + ", which arrives as text");
+          }
+        }
+      }
+    }
+    assertTrue(inspected > 0, "no structured step input inspected — the fitness function is blind");
+    assertTrue(
+        flattened.isEmpty(),
+        () ->
+            "a structured input must be one lone placeholder, or its executor receives text it"
+                + " refuses (orazaka-studio#83):\n  "
+                + String.join("\n  ", flattened));
+  }
+
   private static final int MINIMUM_RATIONALE = 40;
 
   /** The field accesses in one blueprint that its own steps cannot satisfy. */
@@ -482,7 +541,8 @@ class BlueprintFitnessTest {
           seeded.group("key"),
           new Contract(
               propertyNamesOf(MAPPER.readTree(seeded.group("in"))),
-              propertyNamesOf(MAPPER.readTree(seeded.group("out")))));
+              propertyNamesOf(MAPPER.readTree(seeded.group("out"))),
+              structuredPropertiesOf(MAPPER.readTree(seeded.group("in")))));
     }
     for (Path manifest : manifests()) {
       Object loaded =
@@ -504,7 +564,8 @@ class BlueprintFitnessTest {
             String.valueOf(capability.get("key")),
             new Contract(
                 declaredPropertyNames(capability.get("inputSchema")),
-                declaredPropertyNames(capability.get("outputSchema"))));
+                declaredPropertyNames(capability.get("outputSchema")),
+                declaredStructuredProperties(capability.get("inputSchema"))));
       }
     }
     return contracts;
@@ -523,6 +584,67 @@ class BlueprintFitnessTest {
       return names;
     }
     return Set.of();
+  }
+
+  /**
+   * The properties a JSON Schema declares as exactly an {@code object} or an {@code array}, with
+   * that type. A property typed {@code ["object", "string"]} also takes text, so it is not one.
+   */
+  private static Map<String, String> structuredPropertiesOf(JsonNode schema) {
+    Map<String, String> structured = new LinkedHashMap<>();
+    schema
+        .path("properties")
+        .properties()
+        .forEach(
+            property -> {
+              String type = property.getValue().path("type").asString("");
+              if (STRUCTURED_TYPES.contains(type)) {
+                structured.put(property.getKey(), type);
+              }
+            });
+    return structured;
+  }
+
+  /** The same, for a schema that arrived as a YAML mapping. */
+  private static Map<String, String> declaredStructuredProperties(Object schema) {
+    Map<String, String> structured = new LinkedHashMap<>();
+    if (schema instanceof Map<?, ?> mapping && mapping.get("properties") instanceof Map<?, ?> p) {
+      p.forEach(
+          (name, property) -> {
+            if (property instanceof Map<?, ?> declared
+                && declared.get("type") instanceof String type
+                && STRUCTURED_TYPES.contains(type)) {
+              structured.put(String.valueOf(name), type);
+            }
+          });
+    }
+    return structured;
+  }
+
+  private static final Set<String> STRUCTURED_TYPES = Set.of("object", "array");
+
+  private static final Pattern PLACEHOLDER = Pattern.compile("\\{\\{([^{}:]*)(?::[^{}]*)?}}");
+
+  /**
+   * A scope in which every reference of {@code template} holds {@code sample}: a run input, a step
+   * output or a field of one, the fan-out item. Only the template's shape is then left to decide
+   * what reaches the step.
+   */
+  private static RunScope holding(String template, Object sample) {
+    Map<String, Object> inputs = new LinkedHashMap<>();
+    Map<String, Object> steps = new LinkedHashMap<>();
+    Matcher reference = PLACEHOLDER.matcher(template);
+    while (reference.find()) {
+      String[] path = reference.group(1).trim().split("\\.");
+      if ("inputs".equals(path[0]) && path.length == 2) {
+        inputs.put(path[1], sample);
+      } else if ("steps".equals(path[0]) && path.length == 2) {
+        steps.put(path[1], sample);
+      } else if ("steps".equals(path[0]) && path.length == 3) {
+        steps.put(path[1], Map.of(path[2], sample));
+      }
+    }
+    return new RunScope(inputs, Map.of(), steps, sample, Map.of());
   }
 
   /** Every shipped pack manifest. */

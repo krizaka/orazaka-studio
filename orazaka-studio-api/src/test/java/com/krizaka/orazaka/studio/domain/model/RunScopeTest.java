@@ -5,11 +5,16 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class RunScopeTest {
@@ -402,5 +407,118 @@ class RunScopeTest {
     RunScope scope = new RunScope(Map.of(), Map.of(), Map.of(), null, Map.of());
 
     assertEquals("9x16", scope.resolveValue("9x16"));
+  }
+
+  // ── A step input keeps its object (orazaka-studio#83) ─────────────────────
+
+  /** The person a check is about, as the tenant-screening-qc blueprint receives it. */
+  private static Map<String, Object> subject() {
+    Map<String, Object> address = new LinkedHashMap<>();
+    address.put("street", "12 rue des Érables, app. 3");
+    address.put("city", "Montréal");
+    Map<String, Object> subject = new LinkedHashMap<>();
+    subject.put("subjectId", "s-1");
+    subject.put("lastName", "Exemple");
+    subject.put("firstName", "Eric");
+    subject.put("address", address);
+    return subject;
+  }
+
+  private static RunScope withSubject() {
+    return new RunScope(
+        Map.of("subject", subject()),
+        Map.of("tone", "premium"),
+        Map.of("plan", Map.of("subject", subject(), "planJson", "{\"stages\":[]}")),
+        null,
+        Map.of());
+  }
+
+  /**
+   * The bug: {@code "subject": "{{inputs.subject}}"} reached the check executor as the text «
+   * subjectId: s-1, lastName: …, address: street: …, city: … », which it refuses (an address holds
+   * commas; a check never guesses a name out of prose). A lone placeholder over an object is the
+   * object, as it already was for a list (ADR-046).
+   */
+  @Test
+  void resolveValue_lonePlaceholderOverAnObject_keepsTheObject_nestedToo() {
+    Object resolved = withSubject().resolveValue("{{inputs.subject}}");
+
+    assertEquals(subject(), resolved);
+    assertEquals(subject().get("address"), ((Map<?, ?>) resolved).get("address"));
+  }
+
+  @Test
+  void resolveValue_loneStepFieldOverAnObject_keepsTheObject() {
+    assertEquals(subject(), withSubject().resolveValue("{{steps.plan.subject}}"));
+  }
+
+  @Test
+  void resolveValue_objectInsideProse_staysTheReadablePairs() {
+    Object resolved = withSubject().resolveValue("Sujet : {{inputs.subject}}");
+
+    assertTrue(resolved instanceof String);
+    assertTrue(((String) resolved).startsWith("Sujet : subjectId: s-1, lastName: Exemple"));
+  }
+
+  @Test
+  void resolveValue_objectWithAnEmptyDefault_isTheObjectWhenPresent_andTheDefaultWhenAbsent() {
+    RunScope scope = withSubject();
+
+    // tenant-screening-qc passes its optional reports as {{inputs.leaseReport:}}.
+    assertEquals(subject(), scope.resolveValue("{{inputs.subject:}}"));
+    assertEquals("", scope.resolveValue("{{inputs.leaseReport:}}"));
+    assertEquals("aucun", scope.resolveValue("{{inputs.leaseReport:aucun}}"));
+  }
+
+  @Test
+  void resolve_stillRendersAnObjectAsText_forAPrompt() {
+    assertFalse(withSubject().resolve("{{inputs.subject}}").contains("{"));
+  }
+
+  /**
+   * The guard over every value kind a step input can reference (orazaka-studio#83).
+   *
+   * <p>A lone placeholder keeps <b>structure</b> — a list, an object, nested — because only the
+   * value itself can say what it holds. A <b>scalar</b> renders as its text, the same as its {@code
+   * :default}, which the grammar can only write as text: a lone {@code {{inputs.max:6}}} then has
+   * one type whether or not its default applied, and the workers read a number or a boolean from
+   * text. An absent value is its default, or the empty string. A new kind of value that reaches an
+   * executor changes this table, never silently.
+   */
+  static Stream<Arguments> everyValueKind() {
+    Map<String, Object> object = subject();
+    List<Object> list = Arrays.asList("asset-a", Map.of("assetId", "asset-b"), List.of(1, 2));
+    return Stream.of(
+        Arguments.of("string", "Eric", "Eric"),
+        Arguments.of("integer", 42, "42"),
+        Arguments.of("decimal", 9.5, "9.5"),
+        Arguments.of("boolean", true, "true"),
+        Arguments.of("list", list, list),
+        Arguments.of("object", object, object),
+        Arguments.of("emptyObject", Map.of(), Map.of()),
+        Arguments.of("emptyList", List.of(), List.of()),
+        Arguments.of("absent", null, ""));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("everyValueKind")
+  void resolveValue_keepsStructure_andRendersScalarsAsText_forEveryValueKind(
+      String kind, Object value, Object expected) {
+    Map<String, Object> held = new HashMap<>();
+    if (value != null) {
+      held.put("x", value);
+    }
+    Map<String, Object> output = new HashMap<>();
+    if (value != null) {
+      output.put("field", value);
+    }
+    RunScope scope = new RunScope(held, Map.of(), Map.of("s", output), null, Map.of());
+
+    assertEquals(expected, scope.resolveValue("{{inputs.x}}"), kind + " as a run input");
+    assertEquals(expected, scope.resolveValue("{{steps.s.field}}"), kind + " as a step field");
+    assertEquals(expected, scope.withItem(value).resolveValue("{{item}}"), kind + " as an item");
+    assertTrue(
+        scope.resolveValue("« {{inputs.x}} »") instanceof String,
+        kind + " inside prose is always text");
   }
 }

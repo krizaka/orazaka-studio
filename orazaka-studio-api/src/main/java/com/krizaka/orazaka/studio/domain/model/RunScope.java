@@ -121,7 +121,7 @@ public record RunScope(
   }
 
   /**
-   * Resolves a step input to its <b>value</b>, keeping a list a list.
+   * Resolves a step input to its <b>value</b>, keeping a list a list and an object an object.
    *
    * <p>{@link #resolve} renders for prose and is right for a prompt: a fan-out's results become one
    * line each. It was also every step input's only option, so a composition step declaring {@code
@@ -134,9 +134,17 @@ public record RunScope(
    * placeholder inside a sentence, a literal, several placeholders — renders exactly as {@link
    * #resolve} always did, so no prompt in any shipped blueprint changes.
    *
+   * <p>An object is structure as much as a list is: {@code "subject": "{{inputs.subject}}"} once
+   * reached a check executor as « subjectId: …, lastName: …, address: … » — text it must refuse,
+   * since an address holds commas and a check never guesses a person out of prose
+   * (orazaka-studio#83). The value is returned as the scope holds it, nested values included. A
+   * scalar still renders as its text, like the {@code :default} the grammar can only write as text,
+   * so a lone {@code {{inputs.max:6}}} has one type whether or not its default applied; an absent
+   * value is its default, or the empty string.
+   *
    * @param template the raw step input, e.g. {@code "{{inputs.photos}}"} or {@code "9x16"}
-   * @return the referenced value when the template is a lone placeholder over a list, otherwise the
-   *     rendered string
+   * @return the referenced value when the template is a lone placeholder over a list or an object,
+   *     otherwise the rendered string
    * @throws NullPointerException if {@code template} is null
    */
   public Object resolveValue(String template) {
@@ -144,7 +152,7 @@ public record RunScope(
     Matcher lone = LONE_PLACEHOLDER.matcher(template);
     if (lone.matches()) {
       Object value = lookup(reference(lone.group(1)));
-      if (value instanceof List<?>) {
+      if (value instanceof List<?> || value instanceof Map<?, ?>) {
         return value;
       }
     }

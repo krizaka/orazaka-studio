@@ -552,6 +552,78 @@ class StudioRunLifecycleIT {
     assertEquals("Le bail", finished.outputs().getFirst().value());
   }
 
+  // ── orazaka-studio#83: a step input over an object reaches its executor as the object ──
+
+  /**
+   * Two check steps the way tenant-screening-qc wires them: the first reads the run's {@code
+   * subject}, the second the first's output field, each a lone placeholder beside a sentence.
+   */
+  private UUID installObjectInputStudio(String studioKey) {
+    String definition =
+        """
+        {"studioKey": "%s", "version": "1.0.0",
+         "steps": [
+           {"id": "plan", "kind": "CAPABILITY", "featureKey": "orazaka.core.checks.courtrecords",
+            "inputs": {"subject": "{{inputs.subject}}", "note": "Sujet : {{inputs.subject}}",
+                       "cutoffs": "{{inputs.cutoffs:}}"},
+            "out": "plan", "onError": "FAIL", "maxAttempts": 1, "timeout": "PT1M"},
+           {"id": "courts", "kind": "CAPABILITY", "featureKey": "orazaka.core.checks.credit",
+            "dependsOn": ["plan"], "inputs": {"subject": "{{steps.plan.subject}}"},
+            "out": "courts", "onError": "FAIL", "maxAttempts": 1, "timeout": "PT1M"}
+         ],
+         "outputs": [{"key": "status", "label": "Status", "from": "{{steps.courts.status}}",
+                      "type": "TEXT"}]}
+        """
+            .formatted(studioKey);
+    jdbcTemplate.update(
+        "INSERT INTO studio (studio_key, label, tagline, profession, icon_key, pricing,"
+            + " entitlement_key, status, publisher_id, latest_version, sort_weight)"
+            + " VALUES (?, 'Objects', 'Passes a subject', 'trades', 'studio', 'FREE', ?,"
+            + " 'PUBLISHED', 'orazaka', '1.0.0', 200) ON CONFLICT (studio_key) DO NOTHING",
+        studioKey,
+        "studio." + studioKey);
+    jdbcTemplate.update(
+        "INSERT INTO studio_blueprint (studio_key, version, status, definition, input_schema,"
+            + " config_schema, estimated_credits, changelog, published_at, created_by)"
+            + " VALUES (?, '1.0.0', 'PUBLISHED', ?::jsonb, '{\"type\":\"object\"}'::jsonb,"
+            + " '{}'::jsonb, 10, 'test', now(), 'system') ON CONFLICT (studio_key, version) DO NOTHING",
+        studioKey,
+        definition);
+    return installationService.install(studioKey, ACTOR, Map.of(), "fr").id();
+  }
+
+  @Test
+  @DisplayName(
+      "[studio#83] a lone placeholder over an object reaches the executor as that object, from a"
+          + " run input and from an upstream step's stored output")
+  void anObjectStepInputReachesTheExecutorAsTheObject() {
+    Map<String, Object> subject =
+        Map.of(
+            "subjectId", "s-1",
+            "lastName", "Exemple",
+            "firstName", "Eric",
+            "address", Map.of("street", "12 rue des Érables, app. 3", "city", "Montréal"));
+    RunDetail run =
+        runService.start(
+            installObjectInputStudio("object-inputs"), ACTOR, Map.of("subject", subject));
+
+    assertEquals(subject, executor.lastInputs.get("subject"), "the run input, nested and whole");
+    assertEquals("", executor.lastInputs.get("cutoffs"), "an absent optional object: its default");
+    assertTrue(
+        String.valueOf(executor.lastInputs.get("note")).startsWith("Sujet : subjectId: s-1"),
+        () -> "a placeholder in a sentence stays text, got: " + executor.lastInputs);
+
+    sagaService.applyOutcome(
+        executor.dispatched.getFirst(), Map.of("subject", subject, "status", "PLANNED"), null);
+
+    assertEquals(
+        subject,
+        executor.lastInputs.get("subject"),
+        "a step field read back from its stored output is still the object");
+    sagaService.applyOutcome(executor.dispatched.getLast(), Map.of("status", "CLEAR"), null);
+    assertEquals(RunStatus.SUCCEEDED, runService.find(run.id(), ACTOR).orElseThrow().status());
+  }
+
   // ── orazaka-studio#77: a grounded step is held to the citation contract (ADR-087) ───────
 
   /** One grounded-research step that declares no contract of its own; no retry. */

@@ -748,6 +748,9 @@ public class RunSagaService {
    */
   private void transform(RunRow run, BlueprintStep step, RunScope scope) {
     Map<String, Object> reshaped = new LinkedHashMap<>();
+    // resolve, not resolveValue: a transform assembles text — the shipped ones join a fan-out's
+    // results into one body a connector sends (outbound-prospection, lead-research). A step that
+    // needs an object reads it from its source directly (orazaka-studio#83).
     step.inputs().forEach((key, template) -> reshaped.put(key, scope.resolve(template)));
 
     jdbcTemplate.update(

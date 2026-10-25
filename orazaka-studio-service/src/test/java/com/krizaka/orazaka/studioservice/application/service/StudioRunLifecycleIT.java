@@ -609,8 +609,11 @@ class StudioRunLifecycleIT {
 
     assertEquals(subject, executor.lastInputs.get("subject"), "the run input, nested and whole");
     assertEquals("", executor.lastInputs.get("cutoffs"), "an absent optional object: its default");
+    // jsonb keeps no key order, so the pairs are checked, not their sequence.
     assertTrue(
-        String.valueOf(executor.lastInputs.get("note")).startsWith("Sujet : subjectId: s-1"),
+        executor.lastInputs.get("note") instanceof String note
+            && note.startsWith("Sujet : ")
+            && note.contains("subjectId: s-1"),
         () -> "a placeholder in a sentence stays text, got: " + executor.lastInputs);
 
     sagaService.applyOutcome(

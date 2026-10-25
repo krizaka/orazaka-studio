@@ -3,7 +3,6 @@ package com.krizaka.orazaka.studioservice.architecture;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.krizaka.orazaka.studio.domain.model.RunScope;
-
 import com.krizaka.orazaka.test.architecture.SqlBoundaryRules;
 import com.krizaka.orazaka.test.architecture.Workspace;
 import java.io.IOException;

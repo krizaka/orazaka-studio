@@ -17,6 +17,7 @@ Studio & pack marketplace: pack catalogue, studio blueprints, installations and 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Orazaka](https://img.shields.io/badge/part%20of-Orazaka-f67e23)](https://github.com/krizaka/orazaka#repositories)
 [![Docs](https://img.shields.io/badge/docs-krizaka.com-f67e23)](https://www.krizaka.com/en/products/orazaka)
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=krizaka_orazaka-studio&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=krizaka_orazaka-studio) [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=krizaka_orazaka-studio&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=krizaka_orazaka-studio) [![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=krizaka_orazaka-studio&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=krizaka_orazaka-studio) [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=krizaka_orazaka-studio&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=krizaka_orazaka-studio) [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=krizaka_orazaka-studio&metric=coverage)](https://sonarcloud.io/summary/new_code?id=krizaka_orazaka-studio)
 
 [Documentation](https://www.krizaka.com/en/products/orazaka) · [Website](https://www.krizaka.com) · [Krizaka on GitHub](https://github.com/krizaka)
 

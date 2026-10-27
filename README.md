@@ -14,7 +14,7 @@ Studio & pack marketplace: pack catalogue, studio blueprints, installations and 
 
 [![CI](https://github.com/krizaka/orazaka-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/krizaka/orazaka-studio/actions/workflows/ci.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/krizaka/orazaka-studio/badge)](https://scorecard.dev/viewer/?uri=github.com/krizaka/orazaka-studio)
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![License: FSL-1.1-ALv2](https://img.shields.io/badge/license-FSL--1.1--ALv2-blue.svg)](LICENSE.md)
 [![Orazaka](https://img.shields.io/badge/part%20of-Orazaka-f67e23)](https://github.com/krizaka/orazaka#repositories)
 [![Docs](https://img.shields.io/badge/docs-krizaka.com-f67e23)](https://www.krizaka.com/en/products/orazaka)
 [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=krizaka_orazaka-studio&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=krizaka_orazaka-studio) [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=krizaka_orazaka-studio&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=krizaka_orazaka-studio) [![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=krizaka_orazaka-studio&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=krizaka_orazaka-studio) [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=krizaka_orazaka-studio&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=krizaka_orazaka-studio) [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=krizaka_orazaka-studio&metric=coverage)](https://sonarcloud.io/summary/new_code?id=krizaka_orazaka-studio)
@@ -24,7 +24,7 @@ Studio & pack marketplace: pack catalogue, studio blueprints, installations and 
 </div>
 <!-- /krizaka-header -->
 
-**Layer:** Orazaka AI engine · **Version:** `1.0.0-SNAPSHOT` · **License:** Apache-2.0 ·
+**Layer:** Orazaka AI engine · **Version:** `1.0.0-SNAPSHOT` · **License:** FSL-1.1-ALv2 ·
 part of the [Orazaka platform](https://github.com/krizaka/orazaka) by [Krizaka](https://krizaka.com)
 
 ## What it provides
@@ -119,8 +119,8 @@ in the workspace is normative; the local [AGENTS.md](AGENTS.md) only scopes it t
 
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
-
----
-
-<sub>A Krizaka product · [krizaka.com](https://www.krizaka.com) · Apache-2.0</sub>
+[FSL-1.1-ALv2](LICENSE.md) (Functional Source License, Apache-2.0 future licence) © Technologies Krizaka Inc. — read,
+run, modify and self-host it for any purpose except offering a competing service; each version becomes Apache-2.0 two
+years after its release. Commits before the licence change remain [Apache-2.0](LICENSE-APACHE) — see [NOTICE](NOTICE)
+and [ADR-011](https://github.com/krizaka/.github/blob/main/docs/adr/ADR-011-licensing-libraries-open-products-fair-source.md).
+The Krizaka names and birds are not licensed: [trademark policy](https://github.com/krizaka/.github/blob/main/TRADEMARKS.md).

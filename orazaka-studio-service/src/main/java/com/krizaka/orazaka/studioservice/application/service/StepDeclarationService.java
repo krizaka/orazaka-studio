@@ -250,6 +250,42 @@ public class StepDeclarationService {
         .map(row -> declarationsOf(installationId, row));
   }
 
+  /**
+   * The consent gate of a <b>run</b> (orazaka#54, ADR-055 §3): refuses, before any hold or row, an
+   * installation of a regulated pack whose recorded consent is not the version now in force. Fails
+   * closed: a missing pack row is not a pass for a regulated pack, only an unpacked Studio is.
+   *
+   * @param installationId the installation about to run
+   * @throws TurnConsentRequiredException when the recorded consent is stale
+   */
+  public void requireCurrentConsent(UUID installationId) {
+    jdbcTemplate
+        .query(
+            """
+            SELECT i.consent_version AS recorded_consent, p.regulatory_class,
+                   p.consent_version, p.consent_statement
+              FROM studio_installation i
+              JOIN pack_studio ps ON ps.studio_key = i.studio_key
+              JOIN pack p ON p.pack_key = ps.pack_key
+             WHERE i.id = ?
+            """,
+            (rs, rowNum) ->
+                new String[] {
+                  rs.getString("recorded_consent"),
+                  rs.getString("regulatory_class"),
+                  rs.getString("consent_version"),
+                  rs.getString("consent_statement")
+                },
+            installationId)
+        .forEach(
+            row -> {
+              if (RegulatoryClass.REGULATED.name().equals(row[1])
+                  && !Objects.equals(row[2], row[0])) {
+                throw new TurnConsentRequiredException(row[2], row[3]);
+              }
+            });
+  }
+
   private TurnDeclarations declarationsOf(UUID installationId, InstallationRow row) {
     if (RegulatoryClass.REGULATED.name().equals(row.regulatoryClass())
         && !Objects.equals(row.consentVersion(), row.recordedConsent())) {

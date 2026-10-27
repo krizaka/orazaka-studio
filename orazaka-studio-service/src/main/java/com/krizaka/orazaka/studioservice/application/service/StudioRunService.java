@@ -81,6 +81,7 @@ public class StudioRunService {
   private final ContentPolicyService contentPolicy;
   private final FormSchemaService formSchema;
   private final RunResultCache resultCache;
+  private final StepDeclarationService consentGate;
 
   public StudioRunService(
       JdbcTemplate jdbcTemplate,
@@ -98,7 +99,8 @@ public class StudioRunService {
       StudioAccessService accessService,
       ContentPolicyService contentPolicy,
       FormSchemaService formSchema,
-      RunResultCache resultCache) {
+      RunResultCache resultCache,
+      StepDeclarationService consentGate) {
     this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "JdbcTemplate cannot be null");
     this.installationService = Objects.requireNonNull(installationService, "installations");
     this.blueprintRepository = Objects.requireNonNull(blueprintRepository, "blueprints");
@@ -116,6 +118,7 @@ public class StudioRunService {
     this.contentPolicy = Objects.requireNonNull(contentPolicy, "ContentPolicyService required");
     this.formSchema = Objects.requireNonNull(formSchema, "FormSchemaService required");
     this.resultCache = Objects.requireNonNull(resultCache, "RunResultCache required");
+    this.consentGate = Objects.requireNonNull(consentGate, "StepDeclarationService required");
   }
 
   /**
@@ -139,6 +142,7 @@ public class StudioRunService {
       throw new IllegalStateException(
           "installation is " + installation.status() + " and cannot run");
     }
+    consentGate.requireCurrentConsent(installationId);
     return launch(
         installationId,
         installation.studioKey(),
@@ -217,6 +221,7 @@ public class StudioRunService {
         throw new IllegalStateException(
             "installation of " + studioKey + " is " + installation.status());
       }
+      consentGate.requireCurrentConsent(target.installationId());
       version = installation.pinnedVersion();
     }
     String pinned = version;

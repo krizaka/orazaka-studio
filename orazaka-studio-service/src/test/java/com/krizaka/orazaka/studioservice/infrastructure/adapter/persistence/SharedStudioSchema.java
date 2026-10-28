@@ -32,7 +32,7 @@ final class SharedStudioSchema {
             postgres.getDatabaseName(),
             "-tAc",
             "SELECT 1 FROM pg_database WHERE datname = '" + STUDIO_DB + "'");
-    if (exists.getStdout().trim().equals("1")) {
+    if ("1".equals(exists.getStdout().trim())) {
       return;
     }
     postgres.copyFileToContainer(

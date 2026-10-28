@@ -16,10 +16,8 @@ import com.krizaka.orazaka.studio.domain.model.StudioPricing;
 import com.krizaka.orazaka.studio.domain.model.StudioStatus;
 import com.krizaka.orazaka.studioservice.application.service.StudioAccessService;
 import com.krizaka.orazaka.studioservice.infrastructure.adapter.rest.RestErrorResolver;
-import com.krizaka.orazaka.test.architecture.SqlBoundaryRules;
 import com.krizaka.test.container.AbstractContainerIntegrationTest;
 import com.zaxxer.hikari.HikariDataSource;
-import java.nio.file.Path;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
@@ -33,7 +31,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.utility.MountableFile;
 
 /**
  * The gate of the Contributor pack's Studios against a real database (ADR-093 §3,
@@ -62,23 +59,7 @@ class CodeContributorGateIT extends AbstractContainerIntegrationTest {
   @BeforeAll
   static void createStudioSchema() throws Exception {
     PostgreSQLContainer<?> postgres = postgres();
-    postgres.copyFileToContainer(
-        MountableFile.forHostPath(
-            SqlBoundaryRules.locateInitDb(Path.of(System.getProperty("user.dir")))
-                .resolve("80-studio.sql")),
-        "/tmp/80-studio.sql");
-    var created =
-        postgres.execInContainer(
-            "psql",
-            "-U",
-            postgres.getUsername(),
-            "-d",
-            postgres.getDatabaseName(),
-            "-v",
-            "ON_ERROR_STOP=1",
-            "-f",
-            "/tmp/80-studio.sql");
-    assertThat(created.getExitCode()).as(created.getStderr()).isZero();
+    SharedStudioSchema.ensureLoaded(postgres);
     dataSource = new HikariDataSource();
     dataSource.setJdbcUrl(
         postgres.getJdbcUrl().replace("/" + postgres.getDatabaseName(), "/" + STUDIO_DB));

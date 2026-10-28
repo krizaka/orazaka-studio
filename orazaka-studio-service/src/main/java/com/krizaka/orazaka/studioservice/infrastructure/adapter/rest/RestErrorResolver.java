@@ -13,6 +13,7 @@ import com.krizaka.orazaka.studioservice.domain.exception.InstallationNotFoundEx
 import com.krizaka.orazaka.studioservice.domain.exception.PackInstallException;
 import com.krizaka.orazaka.studioservice.domain.exception.PackNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.exception.RunNotFoundException;
+import com.krizaka.orazaka.studioservice.domain.exception.SessionClosedException;
 import com.krizaka.orazaka.studioservice.domain.exception.StudioIncludedException;
 import com.krizaka.orazaka.studioservice.domain.exception.StudioNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.exception.StudioNotInstalledException;
@@ -133,6 +134,26 @@ public class RestErrorResolver {
                 ex.active(),
                 "retryAfterSeconds",
                 ex.retryAfterSeconds()));
+  }
+
+  /**
+   * Maps a turn on a session that is over to {@code 409}, saying why.
+   *
+   * @param ex the refusal
+   * @return {@code 409} with the reason: finished, cancelled, expired or failed
+   */
+  @ExceptionHandler(SessionClosedException.class)
+  public ResponseEntity<Map<String, Object>> handleSessionClosed(SessionClosedException ex) {
+    logger.info("Turn refused, session {}: {}", ex.runId(), ex.reason());
+    return ResponseEntity.status(HttpStatus.CONFLICT)
+        .body(
+            Map.of(
+                STATUS_KEY,
+                "run_refused",
+                "reason",
+                ex.reason().name().toLowerCase(java.util.Locale.ROOT),
+                MESSAGE_KEY,
+                String.valueOf(ex.getMessage())));
   }
 
   /**

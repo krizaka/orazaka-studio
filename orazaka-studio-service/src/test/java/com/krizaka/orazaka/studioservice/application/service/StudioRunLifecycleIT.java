@@ -1676,7 +1676,8 @@ class StudioRunLifecycleIT {
             jdbcTemplate,
             context.getBean(RunSettlementService.class),
             context.getBean(StudioRuntimeConfigService.class),
-            context.getBean(RunAuditService.class))
+            context.getBean(RunAuditService.class),
+            sessions())
         .sweep();
 
     RunDetail swept = runService.find(run.id(), ACTOR).orElseThrow();
@@ -1700,7 +1701,8 @@ class StudioRunLifecycleIT {
             jdbcTemplate,
             context.getBean(RunSettlementService.class),
             context.getBean(StudioRuntimeConfigService.class),
-            context.getBean(RunAuditService.class))
+            context.getBean(RunAuditService.class),
+            sessions())
         .sweep();
 
     RunDetail swept = runService.find(run.id(), ACTOR).orElseThrow();
@@ -1719,11 +1721,224 @@ class StudioRunLifecycleIT {
             jdbcTemplate,
             context.getBean(RunSettlementService.class),
             context.getBean(StudioRuntimeConfigService.class),
-            context.getBean(RunAuditService.class))
+            context.getBean(RunAuditService.class),
+            sessions())
         .sweep();
 
     assertEquals(RunStatus.RUNNING, runService.find(run.id(), ACTOR).orElseThrow().status());
     assertTrue(credits.released.isEmpty());
+  }
+
+  // ── SESSION step (ADR-093, orazaka#450): open, turns, idle-expire, finish, refusal
+  // ──────────────
+
+  private static final String SESSION_KEY = "code-session-test";
+
+  private StudioSessionService sessions() {
+    return new StudioSessionService(
+        jdbcTemplate, sagaService, context.getBean(StudioRuntimeConfigService.class), runService);
+  }
+
+  private com.krizaka.orazaka.studioservice.infrastructure.adapter.schedule.RunSweeper sweeper() {
+    return new com.krizaka.orazaka.studioservice.infrastructure.adapter.schedule.RunSweeper(
+        jdbcTemplate,
+        context.getBean(RunSettlementService.class),
+        context.getBean(StudioRuntimeConfigService.class),
+        context.getBean(RunAuditService.class),
+        sessions());
+  }
+
+  /** A Studio whose only step is a SESSION, like the Contributor pack's. */
+  private RunDetail startSession() {
+    String definition =
+        """
+        {"studioKey": "%s", "version": "1.0.0",
+         "steps": [{"id": "session", "kind": "SESSION", "dependsOn": [], "inputs": {},
+                    "out": "session", "onError": "FAIL", "maxAttempts": 1, "timeout": "PT1M"}],
+         "outputs": [{"key": "closedBy", "label": "Closed by",
+                      "from": "{{steps.session.closedBy}}", "type": "TEXT"}]}
+        """
+            .formatted(SESSION_KEY);
+    jdbcTemplate.update(
+        "INSERT INTO studio (studio_key, label, tagline, profession, icon_key, pricing,"
+            + " entitlement_key, status, publisher_id, latest_version, sort_weight)"
+            + " VALUES (?, 'Session', 'A session', 'developer', 'code', 'FREE', ?, 'PUBLISHED',"
+            + " 'orazaka', '1.0.0', 300) ON CONFLICT (studio_key) DO NOTHING",
+        SESSION_KEY,
+        "studio." + SESSION_KEY);
+    jdbcTemplate.update(
+        "INSERT INTO studio_blueprint (studio_key, version, status, definition, input_schema,"
+            + " config_schema, estimated_credits, changelog, published_at, created_by)"
+            + " VALUES (?, '1.0.0', 'PUBLISHED', ?::jsonb, '{\"type\":\"object\"}'::jsonb,"
+            + " '{}'::jsonb, 40, 'test', now(), 'system') ON CONFLICT (studio_key, version)"
+            + " DO NOTHING",
+        SESSION_KEY,
+        definition);
+    UUID installation = installationService.install(SESSION_KEY, ACTOR, Map.of(), "fr").id();
+    return runService.start(installation, ACTOR, Map.of());
+  }
+
+  private String closedBy(UUID runId) {
+    return jdbcTemplate.queryForObject(
+        "SELECT output ->> 'closedBy' FROM studio_run_step WHERE run_id = ?", String.class, runId);
+  }
+
+  private void silentFor(UUID runId, String interval) {
+    jdbcTemplate.update(
+        "UPDATE studio_run_step SET last_turn_at = now() - ?::interval WHERE run_id = ?",
+        interval,
+        runId);
+  }
+
+  @Test
+  @DisplayName("[#450] a session step stays RUNNING with its hold, and no executor is asked")
+  void aSessionStaysOpen() {
+    RunDetail run = startSession();
+
+    RunDetail found = runService.find(run.id(), ACTOR).orElseThrow();
+    assertEquals(RunStatus.RUNNING, found.status());
+    assertNull(found.finishedAt());
+    assertEquals(RunStepStatus.RUNNING, found.steps().getFirst().status());
+    assertTrue(executor.dispatched.isEmpty());
+    assertTrue(credits.released.isEmpty(), "the hold is outstanding while the session is open");
+  }
+
+  @Test
+  @DisplayName("[#450] turns land on the same run, restart the idle TTL, and keep it RUNNING")
+  void turnsKeepTheSessionOpen() {
+    RunDetail run = startSession();
+    StudioSessionService sessions = sessions();
+
+    sessions.touch(run.id());
+    sessions.touch(run.id());
+
+    assertEquals(RunStatus.RUNNING, runService.find(run.id(), ACTOR).orElseThrow().status());
+    assertNotNull(
+        jdbcTemplate.queryForObject(
+            "SELECT last_turn_at FROM studio_run_step WHERE run_id = ?",
+            java.sql.Timestamp.class,
+            run.id()));
+    // A recent turn is not idle: nothing expires.
+    assertEquals(0, sessions.expireIdle());
+  }
+
+  @Test
+  @DisplayName(
+      "[#450] after the idle TTL (a DB setting) the session expires: settled, no more turns")
+  void anIdleSessionExpires() {
+    RunDetail run = startSession();
+    StudioSessionService sessions = sessions();
+    sessions.touch(run.id());
+
+    silentFor(run.id(), "29 minutes");
+    assertEquals(0, sessions.expireIdle(), "29 minutes of silence is inside the 30-minute default");
+
+    silentFor(run.id(), "31 minutes");
+    assertEquals(1, sessions.expireIdle());
+
+    RunDetail expired = runService.find(run.id(), ACTOR).orElseThrow();
+    assertEquals(RunStatus.SUCCEEDED, expired.status());
+    assertEquals("idle", closedBy(run.id()));
+    assertTrue(credits.released.contains("hold-1"), "measured nothing at the run: the hold closes");
+    var refused =
+        assertThrows(
+            com.krizaka.orazaka.studioservice.domain.exception.SessionClosedException.class,
+            () -> sessions.touch(run.id()));
+    assertEquals(
+        com.krizaka.orazaka.studioservice.domain.exception.SessionClosedException.Reason.EXPIRED,
+        refused.reason());
+  }
+
+  @Test
+  @DisplayName("[#450] the idle TTL is read from the settings row, never a constant")
+  void theTtlIsASetting() {
+    RunDetail run = startSession();
+    silentFor(run.id(), "5 minutes");
+    assertEquals(0, sessions().expireIdle());
+
+    jdbcTemplate.update(
+        "UPDATE studio_runtime_config SET config_value = '120' WHERE config_key = ?",
+        "session.idle-ttl-seconds");
+    try {
+      assertEquals(1, sessions().expireIdle());
+    } finally {
+      jdbcTemplate.update(
+          "UPDATE studio_runtime_config SET config_value = '1800' WHERE config_key = ?",
+          "session.idle-ttl-seconds");
+    }
+    assertEquals(RunStatus.SUCCEEDED, runService.find(run.id(), ACTOR).orElseThrow().status());
+  }
+
+  @Test
+  @DisplayName("[#450] finish closes the session and settles the run; a second finish is harmless")
+  void finishClosesTheSession() {
+    RunDetail run = startSession();
+    StudioSessionService sessions = sessions();
+    sessions.touch(run.id());
+
+    sessions.finish(run.id(), ACTOR);
+    sessions.finish(run.id(), ACTOR);
+
+    RunDetail finished = runService.find(run.id(), ACTOR).orElseThrow();
+    assertEquals(RunStatus.SUCCEEDED, finished.status());
+    assertNotNull(finished.finishedAt());
+    assertEquals("client", closedBy(run.id()));
+    assertEquals(1, credits.released.stream().filter("hold-1"::equals).count());
+    var refused =
+        assertThrows(
+            com.krizaka.orazaka.studioservice.domain.exception.SessionClosedException.class,
+            () -> sessions.touch(run.id()));
+    assertEquals(
+        com.krizaka.orazaka.studioservice.domain.exception.SessionClosedException.Reason.FINISHED,
+        refused.reason());
+  }
+
+  @Test
+  @DisplayName("[#450] only the owner finishes a session")
+  void aStrangerCannotFinish() {
+    RunDetail run = startSession();
+    assertThrows(RunNotFoundException.class, () -> sessions().finish(run.id(), "someone-else"));
+    assertEquals(RunStatus.RUNNING, runService.find(run.id(), ACTOR).orElseThrow().status());
+  }
+
+  @Test
+  @DisplayName("[#450] a cancelled session refuses turns, releases its hold, tells no executor")
+  void aCancelledSessionRefusesTurns() {
+    RunDetail run = startSession();
+    runService.cancel(run.id(), ACTOR);
+
+    var refused =
+        assertThrows(
+            com.krizaka.orazaka.studioservice.domain.exception.SessionClosedException.class,
+            () -> sessions().touch(run.id()));
+    assertEquals(
+        com.krizaka.orazaka.studioservice.domain.exception.SessionClosedException.Reason.CANCELLED,
+        refused.reason());
+    assertTrue(credits.released.contains("hold-1"));
+    assertTrue(executor.stopped.isEmpty(), "a session has no executor to stop");
+  }
+
+  @Test
+  @DisplayName(
+      "[#450] the step and run ceilings leave an open session alone; the sweep expires an idle one")
+  void theSweepJudgesASessionByItsTtl() {
+    RunDetail run = startSession();
+    sessions().touch(run.id());
+    // Older than every ceiling (run.max-seconds 4 h, batch step 30 min), but the client is still
+    // here.
+    jdbcTemplate.update(
+        "UPDATE studio_run SET started_at = now() - INTERVAL '10 hours' WHERE id = ?", run.id());
+    jdbcTemplate.update(
+        "UPDATE studio_run_step SET started_at = now() - INTERVAL '10 hours' WHERE run_id = ?",
+        run.id());
+
+    sweeper().sweep();
+    assertEquals(RunStatus.RUNNING, runService.find(run.id(), ACTOR).orElseThrow().status());
+
+    silentFor(run.id(), "45 minutes");
+    sweeper().sweep();
+    assertEquals(RunStatus.SUCCEEDED, runService.find(run.id(), ACTOR).orElseThrow().status());
+    assertEquals("idle", closedBy(run.id()));
   }
 
   // ── Retention (GDPR / Loi 25) ─────────────────────────────────────────────

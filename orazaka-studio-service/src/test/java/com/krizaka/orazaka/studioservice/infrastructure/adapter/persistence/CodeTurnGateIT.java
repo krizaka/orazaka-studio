@@ -114,6 +114,7 @@ class CodeTurnGateIT extends AbstractContainerIntegrationTest {
     service =
         new CodeTurnService(
             runs,
+            mock(com.krizaka.orazaka.studioservice.application.service.StudioSessionService.class),
             catalog,
             new StudioAccessService(entitlements, new JdbcEntitlementGrantRepositoryAdapter(jdbc)),
             engine);

@@ -29,7 +29,12 @@ class RunSweeperTest {
       runAuditService =
           mock(com.krizaka.orazaka.studioservice.application.service.RunAuditService.class);
   private final RunSweeper sweeper =
-      new RunSweeper(jdbcTemplate, settlementService, runtimeConfigService, runAuditService);
+      new RunSweeper(
+          jdbcTemplate,
+          settlementService,
+          runtimeConfigService,
+          runAuditService,
+          mock(com.krizaka.orazaka.studioservice.application.service.StudioSessionService.class));
 
   @Test
   @DisplayName("A stalled run is failed AND its hold released — releasing is the whole point")

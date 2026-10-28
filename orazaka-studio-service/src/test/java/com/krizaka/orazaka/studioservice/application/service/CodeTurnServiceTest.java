@@ -15,6 +15,7 @@ import com.krizaka.orazaka.studio.domain.model.Studio;
 import com.krizaka.orazaka.studio.domain.model.StudioPricing;
 import com.krizaka.orazaka.studio.domain.model.StudioStatus;
 import com.krizaka.orazaka.studioservice.domain.exception.RunNotFoundException;
+import com.krizaka.orazaka.studioservice.domain.exception.SessionClosedException;
 import com.krizaka.orazaka.studioservice.domain.model.AgentTurn;
 import com.krizaka.orazaka.studioservice.domain.model.AgentTurnResult;
 import com.krizaka.orazaka.studioservice.domain.model.RunDetail;
@@ -43,7 +44,9 @@ class CodeTurnServiceTest {
   private final StudioCatalogService catalog = mock(StudioCatalogService.class);
   private final StudioAccessService access = mock(StudioAccessService.class);
   private final AgentTurnClient engine = mock(AgentTurnClient.class);
-  private final CodeTurnService service = new CodeTurnService(runs, catalog, access, engine);
+  private final StudioSessionService sessions = mock(StudioSessionService.class);
+  private final CodeTurnService service =
+      new CodeTurnService(runs, sessions, catalog, access, engine);
 
   private static RunDetail run(String studioKey, RunStatus status) {
     return new RunDetail(
@@ -139,13 +142,23 @@ class CodeTurnServiceTest {
   }
 
   @Test
-  @DisplayName("a finished run takes no more turns")
-  void aFinishedRunIsRefused() {
-    when(runs.find(RUN, ACTOR))
-        .thenReturn(Optional.of(run("code-issue-to-pr", RunStatus.CANCELLED)));
+  @DisplayName("a session that is over takes no more turns: the engine is never asked")
+  void aClosedSessionIsRefused() {
+    org.mockito.Mockito.doThrow(
+            new SessionClosedException(RUN, SessionClosedException.Reason.EXPIRED))
+        .when(sessions)
+        .touch(RUN);
     assertThatThrownBy(() -> service.turn(RUN, ACTOR, "s", HELLO, TOOLS))
-        .isInstanceOf(IllegalStateException.class);
+        .isInstanceOf(SessionClosedException.class)
+        .hasMessageContaining("expired");
     verify(engine, never()).turn(any());
+  }
+
+  @Test
+  @DisplayName("every accepted turn restarts the session's idle TTL")
+  void aTurnTouchesTheSession() {
+    service.turn(RUN, ACTOR, "s", HELLO, TOOLS);
+    verify(sessions).touch(RUN);
   }
 
   @Test

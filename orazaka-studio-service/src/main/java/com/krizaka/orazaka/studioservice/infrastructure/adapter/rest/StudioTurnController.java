@@ -1,10 +1,12 @@
 package com.krizaka.orazaka.studioservice.infrastructure.adapter.rest;
 
 import com.krizaka.orazaka.studioservice.application.service.CodeTurnService;
+import com.krizaka.orazaka.studioservice.application.service.StudioSessionService;
 import com.krizaka.orazaka.studioservice.infrastructure.adapter.rest.dto.TurnRequest;
 import com.krizaka.orazaka.studioservice.infrastructure.adapter.rest.dto.TurnResponse;
 import java.util.Objects;
 import java.util.UUID;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -23,9 +25,24 @@ import org.springframework.web.bind.annotation.RestController;
 class StudioTurnController {
 
   private final CodeTurnService turns;
+  private final StudioSessionService sessions;
 
-  StudioTurnController(CodeTurnService turns) {
+  StudioTurnController(CodeTurnService turns, StudioSessionService sessions) {
     this.turns = Objects.requireNonNull(turns, "CodeTurnService cannot be null");
+    this.sessions = Objects.requireNonNull(sessions, "StudioSessionService cannot be null");
+  }
+
+  /**
+   * The client's « finish »: ends the session, and the run settles. Idempotent.
+   *
+   * @param runId the session's Studio run
+   * @param actor the authenticated caller
+   * @return {@code 204}; {@code 404} when the run is not the caller's
+   */
+  @PostMapping("/{runId}/finish")
+  ResponseEntity<Void> finish(@PathVariable UUID runId, @AuthenticationPrincipal Jwt actor) {
+    sessions.finish(runId, actor.getSubject());
+    return ResponseEntity.noContent().build();
   }
 
   /**
@@ -36,8 +53,9 @@ class StudioTurnController {
    * @param actor the authenticated caller
    * @return {@code 200} with the text, the calls to run and the usage; {@code 404} when the run is
    *     not the caller's or not a code run; {@code 409} {@code studio_not_entitled} when the pack
-   *     is not held on this turn, or {@code run_refused} when the run is over; the engine's own
-   *     refusals ({@code consent_required}, {@code insufficient_credits}) as it states them
+   *     is not held on this turn, or {@code run_refused} (with a {@code reason}: finished,
+   *     cancelled, expired, failed) when the session is over; the engine's own refusals ({@code
+   *     consent_required}, {@code insufficient_credits}) as it states them
    */
   @PostMapping("/{runId}/turns")
   TurnResponse turn(

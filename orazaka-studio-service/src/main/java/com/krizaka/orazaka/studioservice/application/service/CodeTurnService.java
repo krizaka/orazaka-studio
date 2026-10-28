@@ -1,6 +1,5 @@
 package com.krizaka.orazaka.studioservice.application.service;
 
-import com.krizaka.orazaka.studio.domain.model.RunStatus;
 import com.krizaka.orazaka.studio.domain.model.Studio;
 import com.krizaka.orazaka.studioservice.domain.exception.RunNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.exception.StudioNotFoundException;
@@ -34,9 +33,6 @@ public class CodeTurnService {
           "code-issue-to-pr", "agent.code.issue-to-pr",
           "code-read-write", "agent.code.read-write");
 
-  private static final Set<RunStatus> IN_FLIGHT =
-      Set.of(RunStatus.RUNNING, RunStatus.AWAITING_INPUT);
-
   private static final Set<String> ROLES = Set.of("user", "assistant", "tool");
 
   // @fixed: the ceilings of the Contributor Studios' input schema (messages 400, tools 12).
@@ -47,22 +43,26 @@ public class CodeTurnService {
   static final int MAX_SYSTEM_CHARS = 20_000;
 
   private final StudioRunService runs;
+  private final StudioSessionService sessions;
   private final StudioCatalogService catalog;
   private final StudioAccessService access;
   private final AgentTurnClient engine;
 
   /**
    * @param runs the runs, scoped to their owner
+   * @param sessions the life of the session, touched on every turn
    * @param catalog the Studios
    * @param access the entitlement decision, read on every turn
    * @param engine the model turn
    */
   public CodeTurnService(
       StudioRunService runs,
+      StudioSessionService sessions,
       StudioCatalogService catalog,
       StudioAccessService access,
       AgentTurnClient engine) {
     this.runs = Objects.requireNonNull(runs, "StudioRunService cannot be null");
+    this.sessions = Objects.requireNonNull(sessions, "StudioSessionService cannot be null");
     this.catalog = Objects.requireNonNull(catalog, "StudioCatalogService cannot be null");
     this.access = Objects.requireNonNull(access, "StudioAccessService cannot be null");
     this.engine = Objects.requireNonNull(engine, "AgentTurnClient cannot be null");
@@ -78,7 +78,8 @@ public class CodeTurnService {
    * @param tools the tools the client offers
    * @return what to do next: the model's text and the calls the client must run
    * @throws RunNotFoundException when the run is not the caller's, or is not a Contributor run
-   * @throws IllegalStateException when the run is no longer in flight
+   * @throws com.krizaka.orazaka.studioservice.domain.exception.SessionClosedException when the
+   *     session is over (finished, cancelled, expired)
    * @throws IllegalArgumentException when the turn is malformed or over a ceiling
    * @throws com.krizaka.orazaka.studio.domain.exception.StudioNotEntitledException when the actor
    *     no longer holds the Studio
@@ -100,10 +101,10 @@ public class CodeTurnService {
             .find(run.studioKey(), null)
             .orElseThrow(() -> new StudioNotFoundException(run.studioKey()));
     access.requireEntitled(studio, actorId);
-    if (!IN_FLIGHT.contains(run.status())) {
-      throw new IllegalStateException("The run is " + run.status() + ": it takes no more turns");
-    }
     validate(system, messages, tools);
+    // After the pack gate and the shape, before the model: a session that is over refuses here
+    // (finished, cancelled, expired), and an open one restarts its idle TTL.
+    sessions.touch(runId);
     return engine.turn(new AgentTurn(runId, actorId, featureKey, system, messages, tools));
   }
 

@@ -39,5 +39,13 @@ public enum StepKind {
    * a {@code studioKey}. One level only — a Studio that calls Studios cannot itself be called, so a
    * composition can never recurse.
    */
-  STUDIO
+  STUDIO,
+
+  /**
+   * A session a client drives (ADR-093, krizaka/orazaka#450): no executor, the step stays {@code
+   * RUNNING} while the client sends turns and the run keeps its hold. It ends on the client's «
+   * finish », or after an idle TTL read from {@code session.idle-ttl-seconds}; the run then settles
+   * like any other, and a finished, cancelled or expired session takes no more turns.
+   */
+  SESSION
 }

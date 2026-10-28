@@ -4,8 +4,10 @@ import com.krizaka.orazaka.jobs.domain.model.FailureCause;
 import com.krizaka.orazaka.studio.domain.model.RunStatus;
 import com.krizaka.orazaka.studio.domain.model.RunStepStatus;
 import com.krizaka.orazaka.studioservice.application.service.RunAuditService;
+import com.krizaka.orazaka.studioservice.application.service.RunSagaService;
 import com.krizaka.orazaka.studioservice.application.service.RunSettlementService;
 import com.krizaka.orazaka.studioservice.application.service.StudioRuntimeConfigService;
+import com.krizaka.orazaka.studioservice.application.service.StudioSessionService;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -65,16 +67,19 @@ public class RunSweeper {
   private final StudioRuntimeConfigService runtimeConfigService;
 
   private final RunAuditService runAuditService;
+  private final StudioSessionService sessions;
 
   public RunSweeper(
       JdbcTemplate jdbcTemplate,
       RunSettlementService settlementService,
       StudioRuntimeConfigService runtimeConfigService,
-      RunAuditService runAuditService) {
+      RunAuditService runAuditService,
+      StudioSessionService sessions) {
     this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "JdbcTemplate cannot be null");
     this.settlementService = Objects.requireNonNull(settlementService, "settlement");
     this.runtimeConfigService = Objects.requireNonNull(runtimeConfigService, "config required");
     this.runAuditService = Objects.requireNonNull(runAuditService, "RunAuditService required");
+    this.sessions = Objects.requireNonNull(sessions, "StudioSessionService required");
   }
 
   /** Fails runs whose steps exceeded the timeout, releasing every outstanding hold. */
@@ -91,6 +96,9 @@ public class RunSweeper {
                 + " COALESCE(s.latency_class, ?) AS lane FROM studio_run r"
                 + " JOIN studio_run_step s ON s.run_id = r.id"
                 + " WHERE r.finished_at IS NULL AND s.status = ?"
+                + " AND COALESCE(s.latency_class, '') <> '"
+                + RunSagaService.SESSION_LANE
+                + "'"
                 + " AND s.started_at < now() - make_interval(secs => CASE"
                 + "   WHEN COALESCE(s.latency_class, ?) = 'INTERACTIVE' THEN ? ELSE ? END)",
             (rs, rowNum) ->
@@ -119,6 +127,9 @@ public class RunSweeper {
           "swept: step exceeded its ceiling");
     }
 
+    // A session is judged by its idle TTL, not by the step and run ceilings above (a task lasts
+    // as long as the client keeps sending turns).
+    sessions.expireIdle();
     sweepOverdueRuns();
   }
 
@@ -130,6 +141,10 @@ public class RunSweeper {
         jdbcTemplate.query(
             "SELECT id, hold_id, actor_id, studio_key FROM studio_run"
                 + " WHERE finished_at IS NULL AND status = ?"
+                + " AND NOT EXISTS (SELECT 1 FROM studio_run_step s WHERE s.run_id = studio_run.id"
+                + "   AND s.latency_class = '"
+                + RunSagaService.SESSION_LANE
+                + "')"
                 + " AND started_at < now() - make_interval(secs => ?)",
             (rs, rowNum) ->
                 new StaleRun(

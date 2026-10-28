@@ -52,6 +52,15 @@ public class RunSagaService {
 
   private static final Logger logger = LoggerFactory.getLogger(RunSagaService.class);
 
+  /** The lane of a SESSION step; the sweeper's ceilings skip it. */
+  public static final String SESSION_LANE = "SESSION";
+
+  /** The output key of a closed session step, and its two values. */
+  public static final String CLOSED_BY = "closedBy";
+
+  public static final String CLOSED_BY_CLIENT = "client";
+  public static final String CLOSED_BY_IDLE = "idle";
+
   /** Hard ceiling on {@code forEach} expansion. On owned hardware the accelerator is the budget. */
   private static final String FAN_OUT_MAX_KEY = "run.fan-out-max";
 
@@ -95,6 +104,10 @@ public class RunSagaService {
    * @param jobId the step's job
    */
   public void stop(UUID runId, String jobId) {
+    if (runId.toString().equals(jobId)) {
+      // A SESSION step's job is the run itself: there is no executor to tell.
+      return;
+    }
     if (childOf(runId, jobId)) {
       // A STUDIO step's job is the run it called: stopping it is cancelling that run.
       cancelChild(UUID.fromString(jobId));
@@ -484,6 +497,10 @@ public class RunSagaService {
     }
     if (step.kind() == StepKind.STUDIO) {
       call(run, step, scope);
+      return;
+    }
+    if (step.kind() == StepKind.SESSION) {
+      openSession(run, step);
       return;
     }
     if (step.kind() != StepKind.CAPABILITY && step.kind() != StepKind.CONNECTOR) {
@@ -1026,6 +1043,35 @@ public class RunSagaService {
         runId,
         stepId,
         RunStepStatus.SKIPPED.name());
+  }
+
+  /**
+   * Opens a {@link StepKind#SESSION} step: a row in flight whose job id is the run's own, which is
+   * what lets {@link #closeSession} end it through the same outcome path as any step. It carries
+   * the {@value #SESSION_LANE} lane, which the sweeper's step and run ceilings leave alone: the
+   * idle TTL governs it ({@code StudioSessionService}).
+   */
+  private void openSession(RunRow run, BlueprintStep step) {
+    jdbcTemplate.update(
+        "INSERT INTO studio_run_step (run_id, step_id, ordinal, job_id, status, attempts,"
+            + " latency_class, started_at) VALUES (?, ?, 0, ?, ?, 1, ?, now())"
+            + " ON CONFLICT (run_id, step_id, ordinal) DO NOTHING",
+        run.id(),
+        step.id(),
+        run.id().toString(),
+        RunStepStatus.RUNNING.name(),
+        SESSION_LANE);
+  }
+
+  /**
+   * Ends the session of a run: its step succeeds with who closed it, and the run settles.
+   *
+   * @param runId the run
+   * @param closedBy {@value #CLOSED_BY_CLIENT} or {@value #CLOSED_BY_IDLE}
+   */
+  @Transactional
+  public void closeSession(UUID runId, String closedBy) {
+    applyOutcome(runId.toString(), Map.of(CLOSED_BY, closedBy), null);
   }
 
   /**

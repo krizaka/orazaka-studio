@@ -410,6 +410,9 @@ CREATE TABLE studio_run_step (
     -- service. Storing a credit figure here would be this context pricing work it does not own.
     consumption   JSONB,
     model_name    VARCHAR(120),
+    -- A SESSION step (ADR-093, orazaka#450) stays RUNNING while a client sends turns: this is the last one, and the idle
+    -- TTL (session.idle-ttl-seconds) runs from it. NULL until the first turn (the TTL then runs from started_at).
+    last_turn_at  TIMESTAMPTZ,
     PRIMARY KEY (run_id, step_id, ordinal)
 );
 CREATE INDEX idx_run_step_job ON studio_run_step(job_id) WHERE job_id IS NOT NULL;
@@ -645,6 +648,16 @@ VALUES
  ('webhook.batch-size', '20', 'int', 'Deliveries taken per sweep and instance.', '20', 1, 1000, NULL),
  ('webhook.max-endpoints-per-actor', '5', 'int', 'Webhook endpoints one actor may hold.', '5', 1, 100, NULL),
  ('webhook.rotation-grace-hours', '24', 'int', 'How long the previous secret keeps signing next to the new one.', '24', 0, 720, NULL)
+ON CONFLICT (config_key) DO UPDATE SET
+    default_value = EXCLUDED.default_value,
+    min_value = EXCLUDED.min_value,
+    max_value = EXCLUDED.max_value,
+    max_items = EXCLUDED.max_items;
+
+INSERT INTO studio_runtime_config
+    (config_key, config_value, value_type, description, default_value, min_value, max_value, max_items)
+VALUES
+ ('session.idle-ttl-seconds', '1800', 'int', 'Silence after which a SESSION step (the code agent''s run) is closed as expired: no turn, no finish. The run then settles and takes no more turns.', '1800', 60, 86400, NULL)
 ON CONFLICT (config_key) DO UPDATE SET
     default_value = EXCLUDED.default_value,
     min_value = EXCLUDED.min_value,

@@ -11,7 +11,7 @@ class StepKindTest {
   @Test
   void pinsTheVocabulary_becauseBlueprintJsonNamesTheseKindsAndAddingOneIsHowTheDslGrows() {
     assertEquals(
-        List.of("CAPABILITY", "KNOWLEDGE", "CONNECTOR", "APPROVAL", "TRANSFORM", "STUDIO"),
+        List.of("CAPABILITY", "KNOWLEDGE", "CONNECTOR", "APPROVAL", "TRANSFORM", "STUDIO", "SESSION"),
         Arrays.stream(StepKind.values()).map(Enum::name).toList());
   }
 }

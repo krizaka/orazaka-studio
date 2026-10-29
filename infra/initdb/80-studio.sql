@@ -559,6 +559,7 @@ VALUES
  ('run.blueprint-cache-size', '100', 'int', 'Maximum published blueprint versions parsed and cached per service instance; 0 disables the cache.', '100', 0, 10000, NULL),
  ('run.outcome-listener.concurrency', '2', 'int', 'Outcome listener consumer count per service instance, adjusted live on its virtual-thread executor.', '2', 1, 64, NULL),
  ('marketplace.third-party-enabled', 'false', 'boolean', 'Opens publishing to non-orazaka publishers.', 'false', NULL, NULL, NULL),
+ ('downloads.mac-enabled', 'false', 'boolean', 'Hands out the Mac build on the public download page. Off while the build is not distributed (public, read without a token).', 'false', NULL, NULL, NULL),
  ('retention.run-days', '90', 'int', 'Days a finished run and its artefacts are kept (GDPR / Loi 25).', '90', 1, 3650, NULL),
  -- SENSITIVE runs age out sooner, and an installation may lower this further but never raise it:
  -- the sweeper takes the minimum of the two, so a pack cannot buy itself a longer memory (ADR-051).

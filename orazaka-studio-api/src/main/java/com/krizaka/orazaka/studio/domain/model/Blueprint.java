@@ -92,33 +92,48 @@ public record Blueprint(
   private static void validateNodes(String studioKey, List<BlueprintStep> steps, Set<String> ids) {
     Set<String> publishedOutputs = new HashSet<>(steps.size());
     for (BlueprintStep step : steps) {
-      if (step.kind() == StepKind.CAPABILITY
-          && (step.featureKey() == null || step.featureKey().isBlank())) {
+      validateRequiredNames(step);
+      validateLimits(studioKey, step);
+      validateReferences(step, ids, publishedOutputs);
+    }
+  }
+
+  /** What each kind of step must name. */
+  private static void validateRequiredNames(BlueprintStep step) {
+    if (step.kind() == StepKind.CAPABILITY
+        && (step.featureKey() == null || step.featureKey().isBlank())) {
+      throw new BlueprintValidationException(step.id(), "a CAPABILITY step must name a featureKey");
+    }
+    if (step.kind() == StepKind.CONNECTOR
+        && (step.connectorType() == null || step.connectorType().isBlank())) {
+      throw new BlueprintValidationException(
+          step.id(), "a CONNECTOR step must name the connectorType it dispatches to");
+    }
+  }
+
+  /** A Studio never calls itself, and a fan-out step caps its concurrency. */
+  private static void validateLimits(String studioKey, BlueprintStep step) {
+    if (step.kind() == StepKind.STUDIO && step.studioKey().equals(studioKey)) {
+      throw new BlueprintValidationException(step.id(), "a Studio cannot call itself");
+    }
+    if (step.forEach() != null && step.maxParallel() < 1) {
+      throw new BlueprintValidationException(
+          step.id(), "a forEach step must cap its concurrency: maxParallel >= 1");
+    }
+  }
+
+  /** A step depends only on known steps and publishes an {@code out} name nobody else does. */
+  private static void validateReferences(
+      BlueprintStep step, Set<String> ids, Set<String> publishedOutputs) {
+    for (String dependency : step.dependsOn()) {
+      if (!ids.contains(dependency)) {
         throw new BlueprintValidationException(
-            step.id(), "a CAPABILITY step must name a featureKey");
+            step.id(), "dependsOn names an unknown step: " + dependency);
       }
-      if (step.kind() == StepKind.CONNECTOR
-          && (step.connectorType() == null || step.connectorType().isBlank())) {
-        throw new BlueprintValidationException(
-            step.id(), "a CONNECTOR step must name the connectorType it dispatches to");
-      }
-      if (step.kind() == StepKind.STUDIO && step.studioKey().equals(studioKey)) {
-        throw new BlueprintValidationException(step.id(), "a Studio cannot call itself");
-      }
-      if (step.forEach() != null && step.maxParallel() < 1) {
-        throw new BlueprintValidationException(
-            step.id(), "a forEach step must cap its concurrency: maxParallel >= 1");
-      }
-      for (String dependency : step.dependsOn()) {
-        if (!ids.contains(dependency)) {
-          throw new BlueprintValidationException(
-              step.id(), "dependsOn names an unknown step: " + dependency);
-        }
-      }
-      if (step.out() != null && !publishedOutputs.add(step.out())) {
-        throw new BlueprintValidationException(
-            step.id(), "out name is already published by another step: " + step.out());
-      }
+    }
+    if (step.out() != null && !publishedOutputs.add(step.out())) {
+      throw new BlueprintValidationException(
+          step.id(), "out name is already published by another step: " + step.out());
     }
   }
 

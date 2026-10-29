@@ -13,39 +13,68 @@ public record StudioRuntimeConfig(
     }
     Objects.requireNonNull(description, "description must not be null");
     Objects.requireNonNull(bounds, "bounds must not be null");
-    switch (type) {
-      case "int" -> {
-        if (!(value instanceof Integer)
-            || !(defaultValue instanceof Integer)
-            || bounds.minimum() == null
-            || bounds.maximum() == null
-            || bounds.maxItems() != null) {
-          throw new IllegalArgumentException("int settings require integer values and bounds");
+    switch (SettingType.of(type)) {
+      case INT -> requireInt(value, defaultValue, bounds);
+      case BOOLEAN -> requireBoolean(value, defaultValue, bounds);
+      case LIST -> {
+        requireList(value, defaultValue, bounds);
+        value = List.copyOf((List<?>) value);
+        defaultValue = List.copyOf((List<?>) defaultValue);
+      }
+    }
+  }
+
+  /** The kinds of setting a Studio runtime config can hold, by the name stored in the database. */
+  private enum SettingType {
+    INT("int"),
+    BOOLEAN("boolean"),
+    LIST("list");
+
+    private final String label;
+
+    SettingType(String label) {
+      this.label = label;
+    }
+
+    static SettingType of(String label) {
+      for (SettingType candidate : values()) {
+        if (candidate.label.equals(label)) {
+          return candidate;
         }
       }
-      case "boolean" -> {
-        if (!(value instanceof Boolean)
-            || !(defaultValue instanceof Boolean)
-            || bounds.minimum() != null
-            || bounds.maximum() != null
-            || bounds.maxItems() != null) {
-          throw new IllegalArgumentException("boolean settings require boolean values");
-        }
-      }
-      case "list" -> {
-        if (!(value instanceof List<?> current)
-            || !(defaultValue instanceof List<?> initial)
-            || !current.stream().allMatch(String.class::isInstance)
-            || !initial.stream().allMatch(String.class::isInstance)
-            || bounds.maxItems() == null
-            || bounds.minimum() != null
-            || bounds.maximum() != null) {
-          throw new IllegalArgumentException("list settings require string lists and item bounds");
-        }
-        value = List.copyOf(current);
-        defaultValue = List.copyOf(initial);
-      }
-      default -> throw new IllegalArgumentException("unsupported runtime config type: " + type);
+      throw new IllegalArgumentException("unsupported runtime config type: " + label);
+    }
+  }
+
+  private static void requireInt(Object value, Object defaultValue, Bounds bounds) {
+    if (!(value instanceof Integer)
+        || !(defaultValue instanceof Integer)
+        || bounds.minimum() == null
+        || bounds.maximum() == null
+        || bounds.maxItems() != null) {
+      throw new IllegalArgumentException("int settings require integer values and bounds");
+    }
+  }
+
+  private static void requireBoolean(Object value, Object defaultValue, Bounds bounds) {
+    if (!(value instanceof Boolean)
+        || !(defaultValue instanceof Boolean)
+        || bounds.minimum() != null
+        || bounds.maximum() != null
+        || bounds.maxItems() != null) {
+      throw new IllegalArgumentException("boolean settings require boolean values");
+    }
+  }
+
+  private static void requireList(Object value, Object defaultValue, Bounds bounds) {
+    if (!(value instanceof List<?> current)
+        || !(defaultValue instanceof List<?> initial)
+        || !current.stream().allMatch(String.class::isInstance)
+        || !initial.stream().allMatch(String.class::isInstance)
+        || bounds.maxItems() == null
+        || bounds.minimum() != null
+        || bounds.maximum() != null) {
+      throw new IllegalArgumentException("list settings require string lists and item bounds");
     }
   }
 

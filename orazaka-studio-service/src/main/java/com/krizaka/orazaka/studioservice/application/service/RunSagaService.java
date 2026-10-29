@@ -473,7 +473,7 @@ public class RunSagaService {
       advanceLater(run.id());
       return;
     }
-    if (step.kind() == StepKind.APPROVAL) {
+    if (step.kind() == StepKind.APPROVAL || step.kind() == StepKind.SESSION) {
       park(run.id(), step.id());
       return;
     }

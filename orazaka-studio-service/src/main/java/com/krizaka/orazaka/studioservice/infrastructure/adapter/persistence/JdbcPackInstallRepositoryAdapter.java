@@ -272,7 +272,7 @@ class JdbcPackInstallRepositoryAdapter implements PackInstallRepository {
    * <p>The same defect as the consent statement's (orazaka#301): a prompt is not a blueprint, so a
    * bundle whose only change is the words of its system prompt changed no Studio version, was
    * judged applied, and never reached an environment that already had the pack (the neighbour
-   * persona of the wellbeing pack, krizaka/yororis#99). JSON is compared as data, not as text.
+   * persona of the wellbeing pack). JSON is compared as data, not as text.
    */
   private boolean safetyIsCurrent(PackBundle bundle) {
     if (!bundle.isCatalogued()) {

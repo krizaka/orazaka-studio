@@ -201,6 +201,28 @@ class BlueprintTest {
   }
 
   @Test
+  void acceptsASessionStep_becauseTheContributorPackOpensOneAndNamesNoFeatureKey() {
+    BlueprintStep session =
+        new BlueprintStep(
+            "session",
+            StepKind.SESSION,
+            null,
+            null,
+            Set.of(),
+            Map.of(),
+            "session",
+            null,
+            0,
+            ErrorPolicy.FAIL,
+            Map.of(),
+            1,
+            Duration.ofSeconds(120),
+            null);
+
+    assertDoesNotThrow(() -> of(List.of(session)));
+  }
+
+  @Test
   void rejects_anUncappedFanOut_becauseTheAcceleratorIsTheScarceResource() {
     BlueprintStep uncapped =
         new BlueprintStep(

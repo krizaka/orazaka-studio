@@ -51,6 +51,13 @@ public class RunSettlementService {
   /** A producer that named no model; the pricebook falls back to the capability's own row. */
   private static final String UNRESOLVED_MODEL = "default";
 
+  /**
+   * What a route declares when its step is not billable on its own (orazaka-packs#162): it is
+   * metered at nothing, so it never reaches the ledger ({@code BillableCapability} has no such
+   * value, and {@code valueOf} would refuse it).
+   */
+  private static final String NOT_BILLABLE = "NONE";
+
   private final CreditReservationService creditReservationService;
   private final CapabilityRoutingClient capabilityRoutingClient;
   private final JdbcTemplate jdbcTemplate;
@@ -206,6 +213,9 @@ public class RunSettlementService {
                     row.stepId(),
                     featureKey);
                 return;
+              }
+              if (NOT_BILLABLE.equals(capability.get())) {
+                return; // declared not billable: no charge, no metering
               }
               metered.add(
                   new MeteredStep(

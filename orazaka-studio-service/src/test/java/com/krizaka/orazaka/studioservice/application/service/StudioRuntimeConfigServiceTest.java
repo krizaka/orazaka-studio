@@ -43,4 +43,23 @@ class StudioRuntimeConfigServiceTest {
 
     assertThat(configService.intValue("run.fan-out-max", 10)).isEqualTo(10);
   }
+
+  @Test
+  @DisplayName("Reads a boolean an admin flipped live")
+  void readsConfiguredBoolean() {
+    when(jdbcTemplate.query(anyString(), any(RowMapper.class), anyString()))
+        .thenReturn(List.of("true"));
+
+    assertThat(configService.booleanValue("downloads.mac-enabled", false)).isTrue();
+  }
+
+  @Test
+  @DisplayName("A missing or malformed boolean falls back to the given default")
+  void booleanFallsBack() {
+    when(jdbcTemplate.query(anyString(), any(RowMapper.class), anyString()))
+        .thenReturn(List.of(), List.of("maybe"));
+
+    assertThat(configService.booleanValue("downloads.mac-enabled", false)).isFalse();
+    assertThat(configService.booleanValue("downloads.mac-enabled", false)).isFalse();
+  }
 }

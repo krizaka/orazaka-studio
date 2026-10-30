@@ -3,6 +3,7 @@ package com.krizaka.orazaka.studioservice.infrastructure.config;
 import com.krizaka.security.web.SecurityBaseline;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -27,6 +28,12 @@ import org.springframework.security.web.SecurityFilterChain;
 public class SecurityConfig {
 
   /**
+   * The one anonymous prefix: the public settings (orazaka-web-client#353). Read only, an
+   * allow-list of keys, nothing of a user or a run.
+   */
+  public static final String PUBLIC_PATHS = "/api/v1/studios/public/**";
+
+  /**
    * The filter chain: the Krizaka security baseline, then a valid session JWT for everything else.
    *
    * <p>The baseline ({@link SecurityBaseline}) opens the CORS preflight, health, info and the error
@@ -43,7 +50,8 @@ public class SecurityConfig {
   @Bean
   public SecurityFilterChain securityFilterChain(
       HttpSecurity http, JwtAuthenticationConverter roles) throws Exception {
-    return SecurityBaseline.apply(http, auth -> {})
+    return SecurityBaseline.apply(
+            http, auth -> auth.requestMatchers(HttpMethod.GET, PUBLIC_PATHS).permitAll())
         .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(roles)))
         .build();
   }

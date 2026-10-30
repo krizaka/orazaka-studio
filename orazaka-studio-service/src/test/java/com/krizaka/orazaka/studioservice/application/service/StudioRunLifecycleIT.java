@@ -2083,7 +2083,8 @@ class StudioRunLifecycleIT {
         StudioCatalogService catalogService,
         StudioAccessService accessService,
         ContentPolicyService contentPolicy,
-        com.krizaka.orazaka.studioservice.domain.port.RunResultCache resultCache) {
+        com.krizaka.orazaka.studioservice.domain.port.RunResultCache resultCache,
+        StepDeclarationService consentGate) {
       return new StudioRunService(
           jdbcTemplate,
           installationService,
@@ -2100,7 +2101,8 @@ class StudioRunLifecycleIT {
           accessService,
           contentPolicy,
           new FormSchemaService(category -> java.util.Optional.empty(), objectMapper),
-          resultCache);
+          resultCache,
+          consentGate);
     }
 
     @Bean

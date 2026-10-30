@@ -706,6 +706,61 @@ public class StudioRunService {
   }
 
   /**
+   * Answers a run that waits for input (orazaka-studio#115): the message becomes the output of the
+   * parked step, which then succeeds, and the run goes on.
+   *
+   * @param runId the parked run
+   * @param actorId the opaque billable subject
+   * @param text what the actor says
+   * @throws RunNotFoundException when the id names nothing this actor owns
+   * @throws IllegalStateException when the run is not awaiting input
+   */
+  @Transactional
+  public void send(UUID runId, String actorId, String text) {
+    requireAwaitingInput(runId, actorId);
+    jdbcTemplate.update(
+        "UPDATE studio_run_step SET status = ?, finished_at = now(),"
+            + " output = jsonb_build_object('message', ?::text)"
+            + " WHERE run_id = ? AND status = ? AND job_id IS NULL",
+        RunStepStatus.SUCCEEDED.name(),
+        text,
+        runId,
+        RunStepStatus.PENDING.name());
+    jdbcTemplate.update(
+        "UPDATE studio_run SET status = ? WHERE id = ?", RunStatus.RUNNING.name(), runId);
+    runSagaService.advance(runId);
+  }
+
+  /**
+   * Refuses the approval a run waits on (orazaka-studio#115): the run stops without the step, as a
+   * cancel does, and the hold is released.
+   *
+   * @param runId the parked run
+   * @param actorId the opaque billable subject
+   * @param reason why, or {@code null}
+   * @throws RunNotFoundException when the id names nothing this actor owns
+   * @throws IllegalStateException when the run is not awaiting input
+   */
+  @Transactional
+  public void deny(UUID runId, String actorId, String reason) {
+    requireAwaitingInput(runId, actorId);
+    jdbcTemplate.update(
+        "UPDATE studio_run_step SET output = jsonb_build_object('denied', true, 'reason', ?::text)"
+            + " WHERE run_id = ? AND status = ? AND job_id IS NULL",
+        reason == null ? "" : reason,
+        runId,
+        RunStepStatus.PENDING.name());
+    cancel(runId, actorId);
+  }
+
+  private void requireAwaitingInput(UUID runId, String actorId) {
+    RunDetail run = find(runId, actorId).orElseThrow(() -> new RunNotFoundException(runId));
+    if (run.status() != RunStatus.AWAITING_INPUT) {
+      throw new IllegalStateException("run is not awaiting input: " + run.status());
+    }
+  }
+
+  /**
    * Cancels a run and releases its hold.
    *
    * <p>In-flight jobs are told to stop ({@code job.cancel.<id>}): a worker ends at its next step

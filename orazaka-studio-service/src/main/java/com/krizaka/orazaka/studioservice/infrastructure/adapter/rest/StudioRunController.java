@@ -6,9 +6,11 @@ import com.krizaka.orazaka.studioservice.application.service.StudioRunService;
 import com.krizaka.orazaka.studioservice.domain.exception.RunNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.model.ContentDecision;
 import com.krizaka.orazaka.studioservice.domain.model.RunDetail;
+import com.krizaka.orazaka.studioservice.infrastructure.adapter.rest.dto.DenyRequest;
 import com.krizaka.orazaka.studioservice.infrastructure.adapter.rest.dto.ResumeRequest;
 import com.krizaka.orazaka.studioservice.infrastructure.adapter.rest.dto.RunRequest;
 import com.krizaka.orazaka.studioservice.infrastructure.adapter.rest.dto.RunResponse;
+import com.krizaka.orazaka.studioservice.infrastructure.adapter.rest.dto.SendRequest;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
@@ -324,6 +326,49 @@ class StudioRunController {
   ResponseEntity<Void> approve(@PathVariable UUID runId, @AuthenticationPrincipal Jwt actor) {
     runService.approve(runId, actor.getSubject());
     return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
+  }
+
+  /**
+   * Answers a run that waits for input: the message is the parked step's output and the run goes on
+   * (orazaka-studio#115).
+   *
+   * @param runId the parked run
+   * @param request the message
+   * @param actor the authenticated caller
+   * @return {@code 200} with the run as it now stands
+   */
+  @PostMapping("/runs/{runId}/send")
+  ResponseEntity<RunResponse> send(
+      @PathVariable UUID runId,
+      @RequestBody SendRequest request,
+      @AuthenticationPrincipal Jwt actor) {
+    runService.send(runId, actor.getSubject(), request.text());
+    return ResponseEntity.ok(snapshot(runId, actor));
+  }
+
+  /**
+   * Refuses the approval a run waits on: the run stops without the step and its hold is released
+   * (orazaka-studio#115).
+   *
+   * @param runId the parked run
+   * @param request the optional reason
+   * @param actor the authenticated caller
+   * @return {@code 200} with the run as it now stands
+   */
+  @PostMapping("/runs/{runId}/deny")
+  ResponseEntity<RunResponse> deny(
+      @PathVariable UUID runId,
+      @RequestBody(required = false) DenyRequest request,
+      @AuthenticationPrincipal Jwt actor) {
+    runService.deny(runId, actor.getSubject(), request == null ? null : request.reason());
+    return ResponseEntity.ok(snapshot(runId, actor));
+  }
+
+  private RunResponse snapshot(UUID runId, Jwt actor) {
+    return runService
+        .find(runId, actor.getSubject())
+        .map(RunResponse::from)
+        .orElseThrow(() -> new RunNotFoundException(runId));
   }
 
   /**

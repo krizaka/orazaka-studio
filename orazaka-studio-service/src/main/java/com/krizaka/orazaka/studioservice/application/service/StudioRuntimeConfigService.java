@@ -5,6 +5,7 @@ import com.krizaka.orazaka.studioservice.domain.model.RuntimeConfigChange;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
@@ -37,6 +38,16 @@ public class StudioRuntimeConfigService {
     this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "JdbcTemplate cannot be null");
   }
 
+  private Optional<String> rawValue(String key) {
+    return jdbcTemplate
+        .query(
+            "SELECT config_value FROM studio_runtime_config WHERE config_key = ?",
+            (rs, rowNum) -> rs.getString("config_value"),
+            key)
+        .stream()
+        .findFirst();
+  }
+
   /**
    * Reads a numeric limit.
    *
@@ -45,15 +56,18 @@ public class StudioRuntimeConfigService {
    * @return the configured limit, or the default
    */
   public int intValue(String key, int defaultValue) {
-    return jdbcTemplate
-        .query(
-            "SELECT config_value FROM studio_runtime_config WHERE config_key = ?",
-            (rs, rowNum) -> rs.getString("config_value"),
-            key)
-        .stream()
-        .findFirst()
-        .map(raw -> parse(raw, defaultValue))
-        .orElse(defaultValue);
+    return rawValue(key).map(raw -> parse(raw, defaultValue)).orElse(defaultValue);
+  }
+
+  /**
+   * Reads an on/off switch.
+   *
+   * @param key the config key
+   * @param defaultValue the value to use when the row is absent or not exactly true/false
+   * @return the configured switch, or the default
+   */
+  public boolean booleanValue(String key, boolean defaultValue) {
+    return rawValue(key).map(raw -> parseSwitch(raw, defaultValue)).orElse(defaultValue);
   }
 
   /**
@@ -63,13 +77,7 @@ public class StudioRuntimeConfigService {
    * @return its trimmed, non-empty items; empty when the row is absent
    */
   public java.util.Set<String> listValue(String key) {
-    return jdbcTemplate
-        .query(
-            "SELECT config_value FROM studio_runtime_config WHERE config_key = ?",
-            (rs, rowNum) -> rs.getString("config_value"),
-            key)
-        .stream()
-        .findFirst()
+    return rawValue(key)
         .map(
             raw ->
                 java.util.Arrays.stream(raw.split(","))
@@ -254,6 +262,17 @@ public class StudioRuntimeConfigService {
       return new ConfigRow(
           key, updatedValue, type, description, defaultValue, minimum, maximum, maxItems);
     }
+  }
+
+  private static boolean parseSwitch(String raw, boolean defaultValue) {
+    String text = raw == null ? "" : raw.trim();
+    if ("true".equals(text)) {
+      return true;
+    }
+    if ("false".equals(text)) {
+      return false;
+    }
+    return defaultValue;
   }
 
   private static int parse(String raw, int defaultValue) {

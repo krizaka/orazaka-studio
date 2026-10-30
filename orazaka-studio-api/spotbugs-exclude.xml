@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SpotBugs baseline (krizaka-build#105): measured by scripts/quality-baseline.mjs, never typed. It only shrinks. -->
+<FindBugsFilter>
+    <Match>
+        <Class name="com.krizaka.orazaka.studio.domain.model.PackBundle"/>
+        <Bug pattern="REDOS"/>
+    </Match>
+    <Match>
+        <Class name="com.krizaka.orazaka.studio.domain.model.PackCapability"/>
+        <Bug pattern="REDOS"/>
+    </Match>
+    <Match>
+        <Class name="com.krizaka.orazaka.studio.domain.model.PackStudio"/>
+        <Bug pattern="REDOS"/>
+    </Match>
+    <Match>
+        <Class name="com.krizaka.orazaka.studio.domain.model.RunScope"/>
+        <Bug pattern="REDOS"/>
+    </Match>
+</FindBugsFilter>

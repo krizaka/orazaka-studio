@@ -135,6 +135,24 @@ class StudioServiceGovernanceTest {
                 + String.join("\n  ", violations));
   }
 
+  @Test
+  @DisplayName("[orazaka#54] every class that starts a run depends on the consent gate")
+  void everyRunStarterChecksConsent() throws IOException {
+    List<String> violations = new ArrayList<>();
+    for (Path file : productionSources()) {
+      String body = strippedOfComments(file);
+      if (body.contains("INSERT INTO studio_run (") && !body.contains("requireCurrentConsent(")) {
+        violations.add(file.getFileName() + " inserts a run without requireCurrentConsent");
+      }
+    }
+    assertTrue(
+        violations.isEmpty(),
+        () ->
+            "A run is the moment the processing happens: consent is re-checked on the server"
+                + " before any hold or insert (ADR-055 §3):\n  "
+                + String.join("\n  ", violations));
+  }
+
   private static List<Path> productionSources() throws IOException {
     try (Stream<Path> sources = Files.walk(Path.of("src", "main", "java"))) {
       return sources.filter(path -> path.toString().endsWith(".java")).toList();

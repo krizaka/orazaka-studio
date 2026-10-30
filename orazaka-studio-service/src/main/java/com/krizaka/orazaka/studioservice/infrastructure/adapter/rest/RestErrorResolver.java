@@ -4,6 +4,7 @@ import com.krizaka.billing.domain.exception.InsufficientCreditsException;
 import com.krizaka.orazaka.studio.domain.exception.BlueprintValidationException;
 import com.krizaka.orazaka.studio.domain.exception.StudioNotEntitledException;
 import com.krizaka.orazaka.studio.domain.exception.TurnConsentRequiredException;
+import com.krizaka.orazaka.studioservice.domain.exception.AgentTurnRefusedException;
 import com.krizaka.orazaka.studioservice.domain.exception.ConsentRequiredException;
 import com.krizaka.orazaka.studioservice.domain.exception.ContentPolicyRefusedException;
 import com.krizaka.orazaka.studioservice.domain.exception.ErasureIncompleteException;
@@ -76,6 +77,21 @@ public class RestErrorResolver {
     logger.info("Installation not visible to caller: {}", ex.installationId());
     return ResponseEntity.status(HttpStatus.NOT_FOUND)
         .body(Map.of(STATUS_KEY, "installation_not_found", MESSAGE_KEY, ex.getMessage()));
+  }
+
+  /**
+   * Passes on the engine's refusal of a model turn with its own code and status (ADR-093 §6): the
+   * Mac ends the session with the engine's reason ({@code consent_required}, {@code
+   * insufficient_credits}), never one invented here.
+   *
+   * @param ex the refusal
+   * @return the engine's status
+   */
+  @ExceptionHandler(AgentTurnRefusedException.class)
+  public ResponseEntity<Map<String, Object>> handleAgentTurnRefused(AgentTurnRefusedException ex) {
+    logger.info("Engine refused a turn: {}", ex.code());
+    return ResponseEntity.status(ex.httpStatus())
+        .body(Map.of(STATUS_KEY, ex.code(), MESSAGE_KEY, ex.getMessage()));
   }
 
   /**

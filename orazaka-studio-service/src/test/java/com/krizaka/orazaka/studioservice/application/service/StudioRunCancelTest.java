@@ -40,7 +40,8 @@ class StudioRunCancelTest {
             mock(StudioAccessService.class),
             mock(ContentPolicyService.class),
             passthroughFormSchema(),
-            (a, s, v, f) -> java.util.Optional.empty());
+            (a, s, v, f) -> java.util.Optional.empty(),
+            mock(StepDeclarationService.class));
   }
 
   @Test

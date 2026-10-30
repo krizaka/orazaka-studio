@@ -106,7 +106,8 @@ class StudioRunContentPolicyTest {
             access,
             policy,
             passthroughFormSchema(),
-            (a, s, v, f) -> java.util.Optional.empty());
+            (a, s, v, f) -> java.util.Optional.empty(),
+            mock(StepDeclarationService.class));
   }
 
   private static Map<String, Object> inputs(String fixture) {

@@ -39,5 +39,13 @@ public enum StepKind {
    * a {@code studioKey}. One level only — a Studio that calls Studios cannot itself be called, so a
    * composition can never recurse.
    */
-  STUDIO
+  STUDIO,
+
+  /**
+   * An interactive session driven by a client (ADR-093): the run parks awaiting input while the
+   * client sends its model turns ({@code POST /studio-runs/{id}/turns}), and ends when the client
+   * finishes it (the same resolution as an approval). It runs nothing by itself and names no
+   * feature key, connector or Studio.
+   */
+  SESSION
 }

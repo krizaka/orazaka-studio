@@ -176,4 +176,21 @@ class StepDeclarationServiceIT {
               assertThat(refused.statement()).isEqualTo("Ce Studio enregistre…");
             });
   }
+
+  @Test
+  @DisplayName("[orazaka#54] a run is refused when the pack's consent moved past the recorded one")
+  void aRunIsRefusedAfterAConsentVersionChange() {
+    UUID id = install(ACTOR, "1.0", "ACTIVE");
+    service.requireCurrentConsent(id);
+
+    jdbc.update("UPDATE pack SET consent_version = '2.0' WHERE pack_key = 'bien-etre'");
+    try {
+      assertThatThrownBy(() -> service.requireCurrentConsent(id))
+          .isInstanceOf(TurnConsentRequiredException.class)
+          .extracting(e -> ((TurnConsentRequiredException) e).requiredVersion())
+          .isEqualTo("2.0");
+    } finally {
+      jdbc.update("UPDATE pack SET consent_version = '1.0' WHERE pack_key = 'bien-etre'");
+    }
+  }
 }

@@ -116,6 +116,17 @@ class PackBundleTest {
   }
 
   @Test
+  @DisplayName("a pack key is lower-case words joined by single hyphens")
+  void keyShape() {
+    for (String bad : new String[] {"-a", "a-", "a--b", "A", "a_b", ""}) {
+      assertThrows(
+          IllegalArgumentException.class,
+          () -> bundle(bad, null, null, studio("ok", StudioPricing.FREE)));
+    }
+    assertEquals("a-b-1", bundle("a-b-1", null, null, studio("ok", StudioPricing.FREE)).key());
+  }
+
+  @Test
   @DisplayName("a bundle shipping no Studio is a packaging error, not a pack")
   void emptyBundleIsRefused() {
     assertThrows(IllegalArgumentException.class, () -> bundle("empty", null, null));

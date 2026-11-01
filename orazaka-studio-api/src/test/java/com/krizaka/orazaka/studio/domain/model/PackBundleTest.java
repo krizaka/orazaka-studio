@@ -120,7 +120,8 @@ class PackBundleTest {
   void keyShape() {
     for (String bad : new String[] {"-a", "a-", "a--b", "A", "a_b", ""}) {
       assertThrows(
-          IllegalArgumentException.class, () -> bundle(bad, null, null, studio("ok", StudioPricing.FREE)));
+          IllegalArgumentException.class,
+          () -> bundle(bad, null, null, studio("ok", StudioPricing.FREE)));
     }
     assertEquals("a-b-1", bundle("a-b-1", null, null, studio("ok", StudioPricing.FREE)).key());
   }

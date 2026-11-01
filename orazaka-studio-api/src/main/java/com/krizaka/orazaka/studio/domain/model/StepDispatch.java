@@ -61,14 +61,14 @@ public record StepDispatch(
   public StepDispatch {
     // Optional, not null: a STANDARD pack declares no domain and the difference between "no guard"
     // and "a guard nobody filled in" must not be a null check somebody forgets (ADR-051).
-    scopeGuard = scopeGuard == null ? Optional.empty() : scopeGuard;
+    scopeGuard = Objects.requireNonNullElse(scopeGuard, Optional.empty());
     // Both halves of the crisis declaration or neither: terms with no response short-circuit into
     // silence, which for a crisis guard means a person in crisis reading an empty reply (ADR-055).
-    crisisTerms = crisisTerms == null ? Optional.empty() : crisisTerms;
-    crisisResponse = crisisResponse == null ? Optional.empty() : crisisResponse;
+    crisisTerms = Objects.requireNonNullElse(crisisTerms, Optional.empty());
+    crisisResponse = Objects.requireNonNullElse(crisisResponse, Optional.empty());
     // What the user wrote, as opposed to the template it was pasted into. Only this producer can
     // tell the two apart, so it says which is which (ADR-055 §7).
-    guardSubject = guardSubject == null ? Optional.empty() : guardSubject;
+    guardSubject = Objects.requireNonNullElse(guardSubject, Optional.empty());
     // The run's class, carried to the job plane so the job it becomes is purged by the same class
     // (ADR-065). Required: a step dispatched with no class would reach the job plane as work nobody
     // classified, and the job plane refuses that rather than reading it as STANDARD.

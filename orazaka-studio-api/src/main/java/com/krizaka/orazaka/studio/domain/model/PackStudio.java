@@ -32,7 +32,7 @@ public record PackStudio(
     Integer sortWeight,
     PackBlueprint blueprint) {
 
-  private static final Pattern KEY = Pattern.compile("^[a-z0-9]+(-[a-z0-9]+)*$");
+  private static final Pattern KEY = Pattern.compile("^(?!-)(?!.*(?:--|-$))[a-z0-9-]+$");
 
   /** Compact canonical constructor enforcing the declaration's invariants (ERR-106). */
   public PackStudio {

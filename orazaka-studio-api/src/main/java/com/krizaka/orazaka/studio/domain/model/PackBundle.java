@@ -57,7 +57,7 @@ public record PackBundle(
    */
   public static final String API_VERSION = "orazaka.dev/v1";
 
-  private static final Pattern KEY = Pattern.compile("^[a-z0-9]+(-[a-z0-9]+)*$");
+  private static final Pattern KEY = Pattern.compile("^(?!-)(?!.*(?:--|-$))[a-z0-9-]+$");
 
   /** Compact canonical constructor enforcing the bundle's invariants (ERR-106). */
   public PackBundle {

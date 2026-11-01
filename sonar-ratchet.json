@@ -1,0 +1,13 @@
+{
+  "project": "krizaka_orazaka-studio",
+  "counts": {
+    "bugs": 0,
+    "vulnerabilities": 0,
+    "hotspots": 0,
+    "smells_blocker": 5,
+    "smells_critical": 41,
+    "smells_major": 16,
+    "smells_minor": 12,
+    "smells_info": 0
+  }
+}

@@ -61,34 +61,30 @@ public record TurnRequest(String system, List<MessageDto> messages, List<ToolDto
    * @return the domain messages
    */
   public List<AgentTurn.Message> domainMessages() {
-    return messages == null
-        ? List.of()
-        : messages.stream()
-            .map(
-                m ->
-                    new AgentTurn.Message(
-                        m.role(),
-                        m.content(),
-                        m.calls() == null
-                            ? List.of()
-                            : m.calls().stream().map(CallDto::toDomain).toList(),
-                        m.toolCallId()))
-            .toList();
+    if (messages == null) {
+      return List.of();
+    }
+    return messages.stream().map(TurnRequest::domainMessage).toList();
+  }
+
+  private static AgentTurn.Message domainMessage(MessageDto m) {
+    List<AgentTurn.Call> calls =
+        m.calls() == null ? List.of() : m.calls().stream().map(CallDto::toDomain).toList();
+    return new AgentTurn.Message(m.role(), m.content(), calls, m.toolCallId());
   }
 
   /**
    * @return the domain tools
    */
   public List<AgentTurn.Tool> domainTools() {
-    return tools == null
-        ? List.of()
-        : tools.stream()
-            .map(
-                t ->
-                    new AgentTurn.Tool(
-                        t.name(),
-                        t.description(),
-                        t.parameters() == null ? "{}" : t.parameters().toString()))
-            .toList();
+    if (tools == null) {
+      return List.of();
+    }
+    return tools.stream().map(TurnRequest::domainTool).toList();
+  }
+
+  private static AgentTurn.Tool domainTool(ToolDto t) {
+    String parameters = t.parameters() == null ? "{}" : t.parameters().toString();
+    return new AgentTurn.Tool(t.name(), t.description(), parameters);
   }
 }

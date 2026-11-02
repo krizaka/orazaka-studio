@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.krizaka.orazaka.studio.domain.model.StudioRuntimeConfig;
+import com.krizaka.orazaka.studioservice.StudioSchema;
 import com.krizaka.orazaka.studioservice.domain.model.RuntimeConfigChange;
 import com.krizaka.orazaka.test.architecture.SqlBoundaryRules;
 import com.krizaka.test.container.ServiceRoles;
@@ -54,6 +55,7 @@ class StudioRuntimeConfigAdminIT {
     }
     POSTGRES.start();
     ServiceRoles.assignPassword(POSTGRES, STUDIO_ROLE, STUDIO_PASSWORD);
+    StudioSchema.migrate(POSTGRES, STUDIO_ROLE, STUDIO_PASSWORD);
     dataSource = new HikariDataSource();
     dataSource.setJdbcUrl(
         "jdbc:postgresql://"

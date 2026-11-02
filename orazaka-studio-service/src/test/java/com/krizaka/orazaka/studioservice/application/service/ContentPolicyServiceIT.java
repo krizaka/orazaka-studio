@@ -3,6 +3,7 @@ package com.krizaka.orazaka.studioservice.application.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.krizaka.orazaka.studioservice.StudioSchema;
 import com.krizaka.orazaka.studioservice.domain.exception.ContentPolicyRefusedException;
 import com.krizaka.orazaka.studioservice.infrastructure.support.RulesContentClassifier;
 import com.krizaka.orazaka.test.architecture.SqlBoundaryRules;
@@ -58,6 +59,7 @@ class ContentPolicyServiceIT {
     }
     POSTGRES.start();
     ServiceRoles.assignPassword(POSTGRES, STUDIO_ROLE, STUDIO_PASSWORD);
+    StudioSchema.migrate(POSTGRES, STUDIO_ROLE, STUDIO_PASSWORD);
     dataSource = new HikariDataSource();
     dataSource.setJdbcUrl(
         "jdbc:postgresql://"

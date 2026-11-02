@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.krizaka.orazaka.studio.domain.model.RunStatus;
 import com.krizaka.orazaka.studio.domain.model.StepDispatch;
+import com.krizaka.orazaka.studioservice.StudioSchema;
 import com.krizaka.orazaka.studioservice.domain.model.RunDetail;
 import com.krizaka.orazaka.studioservice.infrastructure.adapter.persistence.PersistenceTestWiring;
 import com.krizaka.orazaka.test.architecture.SqlBoundaryRules;
@@ -133,6 +134,7 @@ class RunOverheadMeasurementIT {
     }
     POSTGRES.start();
     ServiceRoles.assignPassword(POSTGRES, STUDIO_ROLE, STUDIO_PASSWORD);
+    StudioSchema.migrate(POSTGRES, STUDIO_ROLE, STUDIO_PASSWORD);
     context = new AnnotationConfigApplicationContext(MeasurementWiring.class);
     jdbcTemplate = context.getBean(JdbcTemplate.class);
     runService = context.getBean(StudioRunService.class);

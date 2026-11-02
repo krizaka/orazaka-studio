@@ -3,7 +3,6 @@ package com.krizaka.orazaka.studioservice.architecture;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.krizaka.orazaka.studio.domain.model.RunScope;
-import com.krizaka.orazaka.test.architecture.SqlBoundaryRules;
 import com.krizaka.orazaka.test.architecture.Workspace;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -42,8 +41,10 @@ import tools.jackson.databind.ObjectMapper;
  * definitions parsed — the fitness function is blind")} failed the build the moment the seed
  * emptied, which is the whole argument for writing that assertion in the first place.
  *
- * <p>The capability rows are still read from {@code 30-jobs-config.sql}: capabilities are the
- * engine's, not a pack's, and the ones a DATA pack names must already exist there.
+ * <p>The capability rows are read from the job service's Flyway baseline {@code
+ * V1__job_baseline.sql} (krizaka-internal#2255; they were in {@code 30-jobs-config.sql} before):
+ * capabilities are the engine's, not a pack's, and the ones a DATA pack names must already exist
+ * there.
  */
 class BlueprintFitnessTest {
 
@@ -108,7 +109,11 @@ class BlueprintFitnessTest {
 
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
-  private static Path initdb;
+  /** Where the job service keeps its schema and capability seed since its Flyway baseline. */
+  private static final String JOBS_BASELINE =
+      "orazaka-apps/services/orazaka-job-service/src/main/resources/db/migration/V1__job_baseline.sql";
+
+  private static Path jobsBaseline;
   private static Path packs;
 
   @BeforeAll
@@ -116,7 +121,7 @@ class BlueprintFitnessTest {
     // The studio's own bootstrap is in this repository; the packs and the job plane's capability
     // seed are in theirs, read from the workspace (skipped in a standalone clone).
     Path start = Path.of(System.getProperty("user.dir"));
-    initdb = SqlBoundaryRules.locateInitDb(start);
+    jobsBaseline = Workspace.root(start, "the job plane's capability seed").resolve(JOBS_BASELINE);
     packs = Workspace.packs(start);
   }
 
@@ -178,7 +183,7 @@ class BlueprintFitnessTest {
   void bundledBlueprintsOnlyReferenceEnabledCapabilities() throws IOException {
     Set<String> enabled = new LinkedHashSet<>();
     Set<String> known = new LinkedHashSet<>();
-    Matcher capabilities = CAPABILITY_ROW.matcher(read("30-jobs-config.sql"));
+    Matcher capabilities = CAPABILITY_ROW.matcher(jobsSeed());
     while (capabilities.find()) {
       known.add(capabilities.group(1));
       if ("true".equals(capabilities.group(2))) {
@@ -521,8 +526,8 @@ class BlueprintFitnessTest {
     return keys;
   }
 
-  private static String read(String fileName) throws IOException {
-    return Files.readString(Workspace.initDbFile(initdb, fileName));
+  private static String jobsSeed() throws IOException {
+    return Files.readString(jobsBaseline);
   }
 
   /**
@@ -535,7 +540,7 @@ class BlueprintFitnessTest {
    */
   private static Map<String, Contract> declaredContracts() throws IOException {
     Map<String, Contract> contracts = new LinkedHashMap<>();
-    Matcher seeded = SEEDED_CONTRACT.matcher(read("30-jobs-config.sql"));
+    Matcher seeded = SEEDED_CONTRACT.matcher(jobsSeed());
     while (seeded.find()) {
       contracts.put(
           seeded.group("key"),

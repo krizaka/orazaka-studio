@@ -42,7 +42,8 @@ part of the [Orazaka platform](https://github.com/krizaka/orazaka) by [Krizaka](
 | `orazaka-studio-api` | Tier-1 contract. |
 | `orazaka-studio-client` | HTTP client used by the engine (`orazaka-business`). |
 | `orazaka-studio-service` | Spring Boot host (port `8096`), transactional outbox to the job plane. |
-| `infra/initdb/80-studio.sql` | Schema & role of `orazaka_studio_db` (content comes from [orazaka-packs](https://github.com/krizaka/orazaka-packs)). |
+| `orazaka-studio-service/src/main/resources/db/migration` | Schema of `orazaka_studio_db`, Flyway: `V1__studio_baseline.sql`, applied at startup (the catalogue content comes from [orazaka-packs](https://github.com/krizaka/orazaka-packs)). |
+| `infra/initdb/80-studio.sql` | Local bootstrap only: the role and the database. |
 
 ## Position in the platform
 
@@ -108,8 +109,9 @@ Content-Type: application/json
 Updates are audited with the administrator id and before/after values; `GET …/runtime-config/audit` reads them back, newest first (one setting with `key`, at most 200). Runtime reads query the
 database directly, so a successful update is effective on the next run without a service restart.
 
-A fresh database receives the schema and bounds from `infra/initdb/80-studio.sql`. An existing one (dev)
-is migrated from the workspace, additive and idempotent: `node scripts/dev-deploy.mjs runtime-config-admin`
+A fresh database receives the schema and bounds from Flyway (`db/migration/V1__studio_baseline.sql`, applied by the service at startup as the
+database owner; the migrator connection is `DATABASE_STUDIO_MIGRATOR_URL` / `_USER` / `_PASSWORD`, defaulting to the datasource). An existing one (dev)
+is adopted at version 1 (`baseline-on-migrate`, only until its first reset); until then it is migrated from the workspace, additive and idempotent: `node scripts/dev-deploy.mjs runtime-config-admin`
 ([krizaka/orazaka](https://github.com/krizaka/orazaka), `infra/migrations/2026-10-23-studio-runtime-config-admin.sql`).
 
 ## Governance

@@ -9,6 +9,7 @@ import com.krizaka.orazaka.jobs.domain.model.CapabilityRoute;
 import com.krizaka.orazaka.jobs.domain.port.CapabilityRegistrationClient;
 import com.krizaka.orazaka.jobs.domain.port.CapabilityRoutingClient;
 import com.krizaka.orazaka.studio.domain.model.PackBundle;
+import com.krizaka.orazaka.studioservice.StudioSchema;
 import com.krizaka.orazaka.studioservice.application.service.PackInstallerService;
 import com.krizaka.orazaka.studioservice.domain.port.PackInstallRepository;
 import com.krizaka.orazaka.studioservice.infrastructure.adapter.persistence.PersistenceTestWiring;
@@ -117,6 +118,7 @@ class PackBootstrapIT {
     }
     POSTGRES.start();
     ServiceRoles.assignPassword(POSTGRES, STUDIO_ROLE, STUDIO_PASSWORD);
+    StudioSchema.migrate(POSTGRES, STUDIO_ROLE, STUDIO_PASSWORD);
     context = new AnnotationConfigApplicationContext(BootstrapWiring.class);
     jdbcTemplate = context.getBean(JdbcTemplate.class);
     resolver = context.getBean(PackBundleResolver.class);

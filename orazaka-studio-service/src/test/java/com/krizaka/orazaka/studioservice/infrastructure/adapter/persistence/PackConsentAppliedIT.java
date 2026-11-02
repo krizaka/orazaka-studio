@@ -21,6 +21,7 @@ import com.krizaka.orazaka.studio.domain.model.PackTier;
 import com.krizaka.orazaka.studio.domain.model.RegulatoryClass;
 import com.krizaka.orazaka.studio.domain.model.StudioPricing;
 import com.krizaka.orazaka.studio.domain.model.StudioStatus;
+import com.krizaka.orazaka.studioservice.StudioSchema;
 import com.krizaka.orazaka.studioservice.infrastructure.support.ColumnValueResolver;
 import com.krizaka.orazaka.test.architecture.SqlBoundaryRules;
 import com.krizaka.test.container.ServiceRoles;
@@ -76,6 +77,7 @@ class PackConsentAppliedIT {
     }
     POSTGRES.start();
     ServiceRoles.assignPassword(POSTGRES, STUDIO_ROLE, STUDIO_PASSWORD);
+    StudioSchema.migrate(POSTGRES, STUDIO_ROLE, STUDIO_PASSWORD);
     dataSource = new HikariDataSource();
     dataSource.setJdbcUrl(
         "jdbc:postgresql://"

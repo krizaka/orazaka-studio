@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.krizaka.orazaka.studio.domain.exception.TurnConsentRequiredException;
 import com.krizaka.orazaka.studio.domain.model.TurnDeclarations;
+import com.krizaka.orazaka.studioservice.StudioSchema;
 import com.krizaka.orazaka.studioservice.infrastructure.support.ColumnValueResolver;
 import com.krizaka.orazaka.test.architecture.SqlBoundaryRules;
 import com.krizaka.test.container.ServiceRoles;
@@ -56,6 +57,7 @@ class StepDeclarationServiceIT {
     }
     POSTGRES.start();
     ServiceRoles.assignPassword(POSTGRES, STUDIO_ROLE, STUDIO_PASSWORD);
+    StudioSchema.migrate(POSTGRES, STUDIO_ROLE, STUDIO_PASSWORD);
     dataSource = new HikariDataSource();
     dataSource.setJdbcUrl(
         "jdbc:postgresql://"

@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.krizaka.orazaka.jobs.domain.model.CapabilityRoute;
 import com.krizaka.orazaka.jobs.domain.port.CapabilityRoutingClient;
 import com.krizaka.orazaka.studio.domain.model.StepDispatch;
+import com.krizaka.orazaka.studioservice.StudioSchema;
 import com.krizaka.orazaka.studioservice.application.service.OutboxService;
 import com.krizaka.orazaka.test.architecture.SqlBoundaryRules;
 import com.krizaka.test.container.ServiceRoles;
@@ -72,6 +73,7 @@ class StepDispatchDurabilityIT {
     }
     POSTGRES.start();
     ServiceRoles.assignPassword(POSTGRES, STUDIO_ROLE, STUDIO_PASSWORD);
+    StudioSchema.migrate(POSTGRES, STUDIO_ROLE, STUDIO_PASSWORD);
 
     HikariDataSource pool = new HikariDataSource();
     pool.setJdbcUrl(

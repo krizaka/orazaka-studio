@@ -3,6 +3,7 @@ package com.krizaka.orazaka.studioservice.infrastructure.adapter.persistence;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.krizaka.orazaka.assets.infrastructure.adapter.FileMasterKeyProvider;
+import com.krizaka.orazaka.studioservice.StudioSchema;
 import com.krizaka.orazaka.studioservice.domain.model.DueWebhook;
 import com.krizaka.orazaka.studioservice.domain.model.WebhookEndpoint;
 import com.krizaka.orazaka.studioservice.domain.policy.WebhookSignature;
@@ -62,6 +63,7 @@ class JdbcWebhookDeliveryStoreAdapterIT {
     }
     POSTGRES.start();
     ServiceRoles.assignPassword(POSTGRES, STUDIO_ROLE, STUDIO_PASSWORD);
+    StudioSchema.migrate(POSTGRES, STUDIO_ROLE, STUDIO_PASSWORD);
     dataSource = new HikariDataSource();
     dataSource.setJdbcUrl(
         "jdbc:postgresql://"

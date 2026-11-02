@@ -15,6 +15,7 @@ import com.krizaka.orazaka.jobs.domain.port.CapabilityRoutingClient;
 import com.krizaka.orazaka.studio.domain.model.RunStatus;
 import com.krizaka.orazaka.studio.domain.model.RunStepStatus;
 import com.krizaka.orazaka.studio.domain.model.StepDispatch;
+import com.krizaka.orazaka.studioservice.StudioSchema;
 import com.krizaka.orazaka.studioservice.domain.exception.RunNotFoundException;
 import com.krizaka.orazaka.studioservice.domain.exception.TooManyConcurrentRunsException;
 import com.krizaka.orazaka.studioservice.domain.model.InstalledStudio;
@@ -120,6 +121,7 @@ class StudioRunLifecycleIT {
     // The initdb file creates this role WITHOUT a password (ADR-035); `orazaka start`
     // applies the ALTER ROLE at runtime, and a hermetic test has to do the same.
     ServiceRoles.assignPassword(POSTGRES, STUDIO_ROLE, STUDIO_PASSWORD);
+    StudioSchema.migrate(POSTGRES, STUDIO_ROLE, STUDIO_PASSWORD);
     context = new AnnotationConfigApplicationContext(TestWiring.class);
     jdbcTemplate = context.getBean(JdbcTemplate.class);
     runService = context.getBean(StudioRunService.class);

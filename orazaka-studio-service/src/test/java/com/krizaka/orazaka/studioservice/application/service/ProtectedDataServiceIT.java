@@ -14,6 +14,7 @@ import com.krizaka.orazaka.studio.domain.model.PackKind;
 import com.krizaka.orazaka.studio.domain.model.Studio;
 import com.krizaka.orazaka.studio.domain.model.StudioPricing;
 import com.krizaka.orazaka.studio.domain.model.StudioStatus;
+import com.krizaka.orazaka.studioservice.StudioSchema;
 import com.krizaka.orazaka.studioservice.domain.exception.ConsentRequiredException;
 import com.krizaka.orazaka.studioservice.domain.exception.ErasureIncompleteException;
 import com.krizaka.orazaka.studioservice.domain.exception.PackNotFoundException;
@@ -94,6 +95,7 @@ class ProtectedDataServiceIT {
     }
     POSTGRES.start();
     ServiceRoles.assignPassword(POSTGRES, STUDIO_ROLE, STUDIO_PASSWORD);
+    StudioSchema.migrate(POSTGRES, STUDIO_ROLE, STUDIO_PASSWORD);
     dataSource = new HikariDataSource();
     dataSource.setJdbcUrl(
         "jdbc:postgresql://"

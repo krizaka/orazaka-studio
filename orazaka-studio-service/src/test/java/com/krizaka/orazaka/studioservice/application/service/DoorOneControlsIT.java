@@ -14,6 +14,7 @@ import com.krizaka.orazaka.jobs.domain.model.CapabilityDeclaration;
 import com.krizaka.orazaka.jobs.domain.port.CapabilityRegistrationClient;
 import com.krizaka.orazaka.studio.domain.model.PackScopeGuard;
 import com.krizaka.orazaka.studio.domain.model.RunStatus;
+import com.krizaka.orazaka.studioservice.StudioSchema;
 import com.krizaka.orazaka.studioservice.domain.model.ComposerStudio;
 import com.krizaka.orazaka.studioservice.domain.model.InstalledStudio;
 import com.krizaka.orazaka.studioservice.domain.model.RunDetail;
@@ -114,6 +115,7 @@ class DoorOneControlsIT {
     }
     POSTGRES.start();
     ServiceRoles.assignPassword(POSTGRES, STUDIO_ROLE, STUDIO_PASSWORD);
+    StudioSchema.migrate(POSTGRES, STUDIO_ROLE, STUDIO_PASSWORD);
     context = new AnnotationConfigApplicationContext(ControlsWiring.class);
     jdbcTemplate = context.getBean(JdbcTemplate.class);
     runService = context.getBean(StudioRunService.class);

@@ -14,6 +14,7 @@ import com.krizaka.orazaka.studio.domain.model.PackStatus;
 import com.krizaka.orazaka.studio.domain.model.PackSummary;
 import com.krizaka.orazaka.studio.domain.model.RegulatoryClass;
 import com.krizaka.orazaka.studio.domain.model.StudioStatus;
+import com.krizaka.orazaka.studioservice.StudioSchema;
 import com.krizaka.orazaka.studioservice.domain.port.PackRepository;
 import com.krizaka.orazaka.studioservice.infrastructure.adapter.persistence.PersistenceTestWiring;
 import com.krizaka.orazaka.studioservice.infrastructure.support.ColumnValueResolver;
@@ -97,6 +98,7 @@ class PackCatalogIT {
     // The initdb file creates this role WITHOUT a password (ADR-035); `orazaka start` applies the
     // ALTER ROLE at runtime, and a hermetic test has to do the same.
     ServiceRoles.assignPassword(POSTGRES, STUDIO_ROLE, STUDIO_PASSWORD);
+    StudioSchema.migrate(POSTGRES, STUDIO_ROLE, STUDIO_PASSWORD);
     context = new AnnotationConfigApplicationContext(TestWiring.class);
     jdbcTemplate = context.getBean(JdbcTemplate.class);
     catalog = context.getBean(PackCatalogService.class);

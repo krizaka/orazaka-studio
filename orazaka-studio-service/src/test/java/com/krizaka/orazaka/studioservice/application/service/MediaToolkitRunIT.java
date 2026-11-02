@@ -11,6 +11,7 @@ import com.krizaka.billing.domain.port.EntitlementProvider;
 import com.krizaka.orazaka.studio.domain.model.PackKind;
 import com.krizaka.orazaka.studio.domain.model.RunStatus;
 import com.krizaka.orazaka.studio.domain.model.Studio;
+import com.krizaka.orazaka.studioservice.StudioSchema;
 import com.krizaka.orazaka.studioservice.domain.model.ComposerStudio;
 import com.krizaka.orazaka.studioservice.domain.model.RunDetail;
 import com.krizaka.orazaka.test.architecture.SqlBoundaryRules;
@@ -144,6 +145,7 @@ class MediaToolkitRunIT {
     }
     POSTGRES.start();
     ServiceRoles.assignPassword(POSTGRES, STUDIO_ROLE, STUDIO_PASSWORD);
+    StudioSchema.migrate(POSTGRES, STUDIO_ROLE, STUDIO_PASSWORD);
     context = new AnnotationConfigApplicationContext(MediaWiring.class);
     jdbcTemplate = context.getBean(JdbcTemplate.class);
     runService = context.getBean(StudioRunService.class);

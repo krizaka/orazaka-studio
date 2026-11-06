@@ -2,30 +2,30 @@
 <div align="center">
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/krizaka/.github/main/profile/assets/orazaka-dark.svg">
-  <img src="https://raw.githubusercontent.com/krizaka/.github/main/profile/assets/orazaka-light.svg" alt="Orazaka" width="96">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/krizaka/.github/main/profile/assets/sovkora-dark.svg">
+  <img src="https://raw.githubusercontent.com/krizaka/.github/main/profile/assets/sovkora-light.svg" alt="Sovkora" width="96">
 </picture>
 
-# Orazaka Studio
+# Sovkora Studio
 
 **The AI that never leaves home.**
 
 Studio & pack marketplace: pack catalogue, studio blueprints, installations and saga-driven runs, with its contract (studio-api) and HTTP client (studio-client). A step's output is held to the contract it declares (ADR-076); a `orazaka.core.research.grounded` step that declares none is held to the citation shape of ADR-087 (`CitationContract`): an output outside it fails the step as `EXECUTOR_FAULT`.
 
-[![CI](https://github.com/krizaka/orazaka-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/krizaka/orazaka-studio/actions/workflows/ci.yml)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/krizaka/orazaka-studio/badge)](https://scorecard.dev/viewer/?uri=github.com/krizaka/orazaka-studio)
+[![CI](https://github.com/krizaka/sovkora-studio-service/actions/workflows/ci.yml/badge.svg)](https://github.com/krizaka/sovkora-studio-service/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/krizaka/sovkora-studio-service/badge)](https://scorecard.dev/viewer/?uri=github.com/krizaka/sovkora-studio-service)
 [![License: FSL-1.1-ALv2](https://img.shields.io/badge/license-FSL--1.1--ALv2-blue.svg)](LICENSE.md)
-[![Orazaka](https://img.shields.io/badge/part%20of-Orazaka-f67e23)](https://github.com/krizaka/orazaka#repositories)
-[![Docs](https://img.shields.io/badge/docs-krizaka.com-f67e23)](https://www.krizaka.com/en/products/orazaka)
+[![Sovkora](https://img.shields.io/badge/part%20of-Sovkora-f67e23)](https://github.com/krizaka/sovkora#repositories)
+[![Docs](https://img.shields.io/badge/docs-krizaka.com-f67e23)](https://www.krizaka.com/en/products/sovkora)
 [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=krizaka_orazaka-studio&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=krizaka_orazaka-studio) [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=krizaka_orazaka-studio&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=krizaka_orazaka-studio) [![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=krizaka_orazaka-studio&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=krizaka_orazaka-studio) [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=krizaka_orazaka-studio&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=krizaka_orazaka-studio) [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=krizaka_orazaka-studio&metric=coverage)](https://sonarcloud.io/summary/new_code?id=krizaka_orazaka-studio)
 
-[Documentation](https://www.krizaka.com/en/products/orazaka) · [Website](https://www.krizaka.com) · [Krizaka on GitHub](https://github.com/krizaka)
+[Documentation](https://www.krizaka.com/en/products/sovkora) · [Website](https://www.krizaka.com) · [Krizaka on GitHub](https://github.com/krizaka)
 
 </div>
 <!-- /krizaka-header -->
 
-**Layer:** Orazaka AI engine · **Version:** `1.0.0-SNAPSHOT` · **License:** FSL-1.1-ALv2 ·
-part of the [Orazaka platform](https://github.com/krizaka/orazaka) by [Krizaka](https://krizaka.com)
+**Layer:** Sovkora AI engine · **Version:** `1.0.0-SNAPSHOT` · **License:** FSL-1.1-ALv2 ·
+part of the [Sovkora platform](https://github.com/krizaka/sovkora) by [Krizaka](https://krizaka.com)
 
 ## What it provides
 
@@ -39,33 +39,33 @@ part of the [Orazaka platform](https://github.com/krizaka/orazaka) by [Krizaka](
 
 | Module | Role |
 |:---|:---|
-| `orazaka-studio-api` | Tier-1 contract. |
-| `orazaka-studio-client` | HTTP client used by the engine (`orazaka-business`). |
-| `orazaka-studio-service` | Spring Boot host (port `8096`), transactional outbox to the job plane. |
-| `orazaka-studio-service/src/main/resources/db/migration` | Schema of `orazaka_studio_db`, Flyway: `V1__studio_baseline.sql`, applied at startup (the catalogue content comes from [orazaka-packs](https://github.com/krizaka/orazaka-packs)). |
+| `sovkora-studio-api` | Tier-1 contract. |
+| `sovkora-studio-client` | HTTP client used by the engine (`sovkora-business`). |
+| `sovkora-studio-service` | Spring Boot host (port `8096`), transactional outbox to the job plane. |
+| `sovkora-studio-service/src/main/resources/db/migration` | Schema of `orazaka_studio_db`, Flyway: `V1__studio_baseline.sql`, applied at startup (the catalogue content comes from [sovkora-packs](https://github.com/krizaka/sovkora-packs)). |
 | `infra/initdb/80-studio.sql` | Local bootstrap only: the role and the database. |
 
 ## Position in the platform
 
 | | |
 |:---|:---|
-| Depends on | [`orazaka-build`](https://github.com/krizaka/orazaka-build) · [`orazaka-contracts`](https://github.com/krizaka/orazaka-contracts) · [`krizaka-billing`](https://github.com/krizaka/krizaka-build/tree/main/krizaka-billing) |
-| Used by | [`orazaka-ai-engine`](https://github.com/krizaka/orazaka-ai-engine) |
+| Depends on | [`sovkora-build`](https://github.com/krizaka/sovkora-build) · [`sovkora-contracts`](https://github.com/krizaka/sovkora-contracts) · [`krizaka-billing`](https://github.com/krizaka/krizaka-build/tree/main/krizaka-billing) |
+| Used by | [`sovkora-engine`](https://github.com/krizaka/sovkora-engine) |
 | Workspace path | `orazaka-apps/services/orazaka-studio` |
 
 ## Build
 
-**Inside the Orazaka workspace** (recommended — every dependency is built from source):
+**Inside the Sovkora workspace** (recommended — every dependency is built from source):
 
 ```bash
-git clone https://github.com/krizaka/orazaka.git && cd orazaka
+git clone https://github.com/krizaka/sovkora.git && cd sovkora
 node scripts/workspace.mjs clone          # clones every repository at its workspace path
 ./mvnw -f orazaka-apps/services/orazaka-studio/pom.xml verify
 ```
 
 **Standalone** — upstream artifacts must be in `~/.m2` (built by the workspace) or resolvable from
 GitHub Packages (`https://maven.pkg.github.com/krizaka/<repository>`, see the
-[workspace README](https://github.com/krizaka/orazaka#consuming-packages)):
+[workspace README](https://github.com/krizaka/sovkora#consuming-packages)):
 
 ```bash
 ./mvnw verify
@@ -85,7 +85,7 @@ latencies, JFR profile, and `EXPLAIN ANALYZE` plans for the job lookup and step 
 
 `run.result-cache.studios` lists the Studios whose identical run (same actor, Studio version, inputs and
 installation configuration) answers from the recorded result: no hold, no dispatch, no model call, and
-`cachedFrom` names the run that computed it (orazaka-studio#61). The schema ships it with
+`cachedFrom` names the run that computed it (sovkora-studio-service#61). The schema ships it with
 `compliance-check` (ADR-089 §4): its ruleset is resolved from the document's kind and `asOf`, so the
 recorded report, judgment included, is the answer again. A new pack version is a new Studio version
 and computes afresh. A step whose answer depends on more than the inputs returns `resultCacheable:
@@ -112,11 +112,11 @@ database directly, so a successful update is effective on the next run without a
 A fresh database receives the schema and bounds from Flyway (`db/migration/V1__studio_baseline.sql`, applied by the service at startup as the
 database owner; the migrator connection is `DATABASE_STUDIO_MIGRATOR_URL` / `_USER` / `_PASSWORD`, defaulting to the datasource). An existing one (dev)
 is adopted at version 1 (`baseline-on-migrate`, only until its first reset); until then it is migrated from the workspace, additive and idempotent: `node scripts/dev-deploy.mjs runtime-config-admin`
-([krizaka/orazaka](https://github.com/krizaka/orazaka), `infra/migrations/2026-10-23-studio-runtime-config-admin.sql`).
+([krizaka/sovkora](https://github.com/krizaka/sovkora), `infra/migrations/2026-10-23-studio-runtime-config-admin.sql`).
 
 ## Governance
 
-This repository follows the Orazaka governance contract — [AGENTS.md](https://github.com/krizaka/orazaka/blob/main/AGENTS.md)
+This repository follows the Sovkora governance contract — [AGENTS.md](https://github.com/krizaka/sovkora/blob/main/AGENTS.md)
 in the workspace is normative; the local [AGENTS.md](AGENTS.md) only scopes it to this repository.
 
 ## License

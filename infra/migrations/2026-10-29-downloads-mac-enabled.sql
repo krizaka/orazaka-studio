@@ -1,4 +1,4 @@
--- orazaka-web-client#353: the Mac download switch is a setting the admin flips in the console (audited), read without a token
+-- sovkora-web#353: the Mac download switch is a setting the admin flips in the console (audited), read without a token
 -- by the public site. Applied once to an existing orazaka_studio_db, as its owner role. Idempotent; never overwrites an admin's value.
 INSERT INTO studio_runtime_config
     (config_key, config_value, value_type, description, default_value, min_value, max_value, max_items)

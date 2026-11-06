@@ -71,7 +71,7 @@ class PackBootstrapIT {
   private static final String STUDIO_PASSWORD = "orazaka_studio_pass";
 
   /** The pack door 1's closure depends on, and the six Studios it has to leave behind. */
-  private static final String MEDIA_PACK = "sovkora-media";
+  private static final String MEDIA_PACK = "orazaka-media";
 
   private static final List<String> MEDIA_STUDIOS =
       List.of(

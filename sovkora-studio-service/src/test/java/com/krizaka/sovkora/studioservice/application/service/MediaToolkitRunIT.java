@@ -42,7 +42,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * The six media Studios of the real {@code sovkora-media} bundle run, and each is metered once (M2,
+ * The six media Studios of the real {@code orazaka-media} bundle run, and each is metered once (M2,
  * ADR-066).
  *
  * <p>Every capability in that pack was reachable before this run, and none of it was billed through
@@ -50,7 +50,7 @@ import tools.jackson.databind.ObjectMapper;
  * The claim here is the whole of M2's acceptance — <b>runnable as a Studio AND metered once</b> —
  * so it is asserted per Studio rather than inferred from one of them.
  *
- * <p>The blueprints are read from {@code sovkora-packs/sovkora-media/}, not inlined: this suite is
+ * <p>The blueprints are read from {@code sovkora-packs/orazaka-media/}, not inlined: this suite is
  * worth something only if it runs the definitions that ship. The executor and the credit client are
  * recorded stubs — what is under test is the engine and the pack, and a failure here must be
  * unambiguously one of those two (ADR-034 §16).
@@ -64,7 +64,7 @@ class MediaToolkitRunIT {
   private static final String STUDIO_ROLE = "orazaka_studio";
   private static final String STUDIO_PASSWORD = "orazaka_studio_pass";
   private static final String ACTOR = "550e8400-e29b-41d4-a716-446655440002";
-  private static final String PACK = "sovkora-media";
+  private static final String PACK = "orazaka-media";
 
   /**
    * Studio key → the inputs a run of it is started with, and the outcome its capability returns.
@@ -327,7 +327,7 @@ class MediaToolkitRunIT {
       return MAPPER.readTree(Files.readString(blueprint));
     } catch (java.io.IOException unreadable) {
       throw new IllegalStateException(
-          "the sovkora-media bundle is what this suite runs; it must be readable", unreadable);
+          "the orazaka-media bundle is what this suite runs; it must be readable", unreadable);
     }
   }
 

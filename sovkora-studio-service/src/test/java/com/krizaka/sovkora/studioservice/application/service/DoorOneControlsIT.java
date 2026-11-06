@@ -62,7 +62,7 @@ import tools.jackson.databind.ObjectMapper;
  * <p>The catalogue is <b>installed by bootstrap from the bundles on disk</b> rather than seeded by
  * hand: the controls are derived from the pack, so a fixture that wrote the rows itself would be
  * asserting its own INSERT statements. `document-validation` is the SENSITIVE pack this repository
- * ships, and `sovkora-media` the STANDARD one door 1 carried.
+ * ships, and `orazaka-media` the STANDARD one door 1 carried.
  */
 class DoorOneControlsIT {
 
@@ -200,7 +200,7 @@ class DoorOneControlsIT {
         "STANDARD",
         jdbcTemplate.queryForObject(
             "SELECT data_class FROM studio_run WHERE id = ?", String.class, run.id()),
-        "the class comes from the pack; sovkora-media declares STANDARD and says why");
+        "the class comes from the pack; orazaka-media declares STANDARD and says why");
     assertEquals(
         RunStatus.SUCCEEDED,
         runService.find(run.id(), ACTOR).orElseThrow().status(),

@@ -190,7 +190,8 @@ public class RunSagaService {
     Map<String, Object> produced = output;
     if (failure == null) {
       // A step that declares its output's shape is not SUCCEEDED on an output outside it
-      // (sovkora-studio-service#59): it fails as the executor's fault, its own retry policy applies, and
+      // (sovkora-studio-service#59): it fails as the executor's fault, its own retry policy
+      // applies, and
       // the steps after it never consume a hollow result. Path and rule only, never the value.
       Optional<String> broken = contractViolation(ref, blueprint, output);
       if (broken.isPresent()) {
@@ -567,7 +568,8 @@ public class RunSagaService {
   }
 
   /**
-   * Executes a {@link StepKind#STUDIO} step: one child run per instance (sovkora-studio-service#62).
+   * Executes a {@link StepKind#STUDIO} step: one child run per instance
+   * (sovkora-studio-service#62).
    *
    * <p>The step's row is written first, its job id the child's run id, and only then is the child
    * started: a child that finishes inside its own first advance (a Studio of transforms) reports to
@@ -879,7 +881,8 @@ public class RunSagaService {
 
     // A run a step declared not reusable (its answer depends on more than its inputs, such as the
     // day the
-    // clock gave) keeps no fingerprint, so the result cache never serves it (sovkora-studio-service#80).
+    // clock gave) keeps no fingerprint, so the result cache never serves it
+    // (sovkora-studio-service#80).
     jdbcTemplate.update(
         "UPDATE studio_run SET status = ?, outputs = ?::jsonb, finished_at = now(),"
             + " input_fingerprint = CASE WHEN ? THEN input_fingerprint END"

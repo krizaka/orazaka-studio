@@ -62,7 +62,8 @@ class StudioRuntimeConfigControllerTest {
   @DisplayName(
       "the API lives under /api/v1/studios, the only prefix the edge sends to this service")
   void theApiIsReachableThroughTheEdge() {
-    // sovkora-edge-service routes /api/v1/studios/** here and /api/v1/admin/** elsewhere: a path under
+    // sovkora-edge-service routes /api/v1/studios/** here and /api/v1/admin/** elsewhere: a path
+    // under
     // /api/v1/admin/studios answered 404 from the console. Same place as the operator audit.
     String path =
         StudioRuntimeConfigController.class.getAnnotation(RequestMapping.class).value()[0];

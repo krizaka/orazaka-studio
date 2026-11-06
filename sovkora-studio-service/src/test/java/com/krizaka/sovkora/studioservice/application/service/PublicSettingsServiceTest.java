@@ -10,8 +10,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * The few settings the public site may read without a token (sovkora-web#353): an
- * allow-list, fail closed, and nothing else of the runtime config ever leaves through it.
+ * The few settings the public site may read without a token (sovkora-web#353): an allow-list, fail
+ * closed, and nothing else of the runtime config ever leaves through it.
  */
 class PublicSettingsServiceTest {
 

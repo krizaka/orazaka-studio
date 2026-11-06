@@ -24,9 +24,10 @@ import java.util.UUID;
  * @param startedAt when it was accepted
  * @param finishedAt when it reached a terminal state, {@code null} while running
  * @param steps the per-node states; empty in a history listing
- * @param cachedFrom the run whose recorded result this one answers with (sovkora-studio-service#61), or
- *     {@code null} when it computed its own
- * @param resumedFrom the run this one resumes from a step (sovkora-studio-service#63), or {@code null}
+ * @param cachedFrom the run whose recorded result this one answers with
+ *     (sovkora-studio-service#61), or {@code null} when it computed its own
+ * @param resumedFrom the run this one resumes from a step (sovkora-studio-service#63), or {@code
+ *     null}
  */
 public record RunDetail(
     UUID id,

@@ -198,8 +198,9 @@ final class BlueprintMapper {
   }
 
   /**
-   * A step's output contract (sovkora-studio-service#59): the same enforced subset as a run output's,
-   * refused at load on any other keyword, so the step and the run cannot read one schema two ways.
+   * A step's output contract (sovkora-studio-service#59): the same enforced subset as a run
+   * output's, refused at load on any other keyword, so the step and the run cannot read one schema
+   * two ways.
    */
   private static String contractOf(JsonNode step) {
     JsonNode contract = step.path("outputContract");

@@ -28,8 +28,8 @@ import org.springframework.security.web.SecurityFilterChain;
 public class SecurityConfig {
 
   /**
-   * The one anonymous prefix: the public settings (sovkora-web#353). Read only, an
-   * allow-list of keys, nothing of a user or a run.
+   * The one anonymous prefix: the public settings (sovkora-web#353). Read only, an allow-list of
+   * keys, nothing of a user or a run.
    */
   public static final String PUBLIC_PATHS = "/api/v1/studios/public/**";
 

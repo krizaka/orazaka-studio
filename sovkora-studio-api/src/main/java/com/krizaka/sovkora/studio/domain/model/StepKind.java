@@ -34,10 +34,10 @@ public enum StepKind {
   TRANSFORM,
 
   /**
-   * A call to another published Studio (sovkora-studio-service#62): the step starts a child run with its
-   * own run id, its credits inside the parent's hold, and its outcome becomes this step's. Requires
-   * a {@code studioKey}. One level only — a Studio that calls Studios cannot itself be called, so a
-   * composition can never recurse.
+   * A call to another published Studio (sovkora-studio-service#62): the step starts a child run
+   * with its own run id, its credits inside the parent's hold, and its outcome becomes this step's.
+   * Requires a {@code studioKey}. One level only — a Studio that calls Studios cannot itself be
+   * called, so a composition can never recurse.
    */
   STUDIO,
 

@@ -1,10 +1,10 @@
 package com.krizaka.sovkora.studioservice.infrastructure.adapter.jobs;
 
+import com.krizaka.security.jwt.SessionJwtProperties;
+import com.krizaka.security.token.ServiceTokenProvider;
 import com.krizaka.sovkora.studioservice.domain.exception.ErasureIncompleteException;
 import com.krizaka.sovkora.studioservice.domain.port.ConversationErasureClient;
 import com.krizaka.sovkora.studioservice.infrastructure.config.ConversationPlaneProperties;
-import com.krizaka.security.jwt.SessionJwtProperties;
-import com.krizaka.security.token.ServiceTokenProvider;
 import java.util.Map;
 import java.util.Objects;
 import org.springframework.core.ParameterizedTypeReference;

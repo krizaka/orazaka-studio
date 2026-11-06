@@ -2,9 +2,9 @@ package com.krizaka.sovkora.studioservice.infrastructure.adapter.jobs;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.krizaka.security.jwt.SessionJwtProperties;
 import com.krizaka.sovkora.jobs.domain.model.CapabilityRoute;
 import com.krizaka.sovkora.studioservice.infrastructure.config.CapabilityRoutingProperties;
-import com.krizaka.security.jwt.SessionJwtProperties;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;

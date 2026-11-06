@@ -137,10 +137,10 @@ public record RunScope(
    * <p>An object is structure as much as a list is: {@code "subject": "{{inputs.subject}}"} once
    * reached a check executor as « subjectId: …, lastName: …, address: … » — text it must refuse,
    * since an address holds commas and a check never guesses a person out of prose
-   * (sovkora-studio-service#83). The value is returned as the scope holds it, nested values included. A
-   * scalar still renders as its text, like the {@code :default} the grammar can only write as text,
-   * so a lone {@code {{inputs.max:6}}} has one type whether or not its default applied; an absent
-   * value is its default, or the empty string.
+   * (sovkora-studio-service#83). The value is returned as the scope holds it, nested values
+   * included. A scalar still renders as its text, like the {@code :default} the grammar can only
+   * write as text, so a lone {@code {{inputs.max:6}}} has one type whether or not its default
+   * applied; an absent value is its default, or the empty string.
    *
    * @param template the raw step input, e.g. {@code "{{inputs.photos}}"} or {@code "9x16"}
    * @return the referenced value when the template is a lone placeholder over a list or an object,
@@ -337,7 +337,8 @@ public record RunScope(
    * skipped has no result at all). It is the same form read over each element, not a new one:
    * {@code {{steps.briefs.content}}} gives the briefs' texts, one per line in a prompt and a list
    * for a step input, where {@code {{steps.briefs}}} gave every result's whole envelope
-   * (sovkora-studio-service#60, sovkora-packs#5). None carrying it reads as absent, so a default applies.
+   * (sovkora-studio-service#60, sovkora-packs#5). None carrying it reads as absent, so a default
+   * applies.
    */
   private Object step(String path) {
     int dot = path.indexOf('.');

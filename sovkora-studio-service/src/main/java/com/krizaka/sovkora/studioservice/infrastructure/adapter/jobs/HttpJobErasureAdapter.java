@@ -1,10 +1,10 @@
 package com.krizaka.sovkora.studioservice.infrastructure.adapter.jobs;
 
+import com.krizaka.security.jwt.SessionJwtProperties;
+import com.krizaka.security.token.ServiceTokenProvider;
 import com.krizaka.sovkora.studioservice.domain.exception.ErasureIncompleteException;
 import com.krizaka.sovkora.studioservice.domain.port.JobErasureClient;
 import com.krizaka.sovkora.studioservice.infrastructure.config.CapabilityRoutingProperties;
-import com.krizaka.security.jwt.SessionJwtProperties;
-import com.krizaka.security.token.ServiceTokenProvider;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;

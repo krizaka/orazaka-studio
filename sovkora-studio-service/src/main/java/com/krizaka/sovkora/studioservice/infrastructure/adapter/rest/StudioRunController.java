@@ -372,8 +372,8 @@ class StudioRunController {
   }
 
   /**
-   * Starts a new run from a step of a finished one (sovkora-studio-service#63): the steps before it keep
-   * their recorded outputs and only the re-run steps are billed.
+   * Starts a new run from a step of a finished one (sovkora-studio-service#63): the steps before it
+   * keep their recorded outputs and only the re-run steps are billed.
    *
    * @param runId the finished run
    * @param request the step to run again

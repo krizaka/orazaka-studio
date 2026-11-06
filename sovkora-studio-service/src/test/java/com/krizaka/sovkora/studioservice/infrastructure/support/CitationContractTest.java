@@ -15,8 +15,9 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * The citation shape of ADR-087 as the output contract of {@code orazaka.core.research.grounded}
- * (sovkora-studio-service#77): fully enforceable by the saga, applied to a grounded step that declares no
- * contract of its own, and naming paths and rules — never values — when an output breaks it.
+ * (sovkora-studio-service#77): fully enforceable by the saga, applied to a grounded step that
+ * declares no contract of its own, and naming paths and rules — never values — when an output
+ * breaks it.
  */
 class CitationContractTest {
 

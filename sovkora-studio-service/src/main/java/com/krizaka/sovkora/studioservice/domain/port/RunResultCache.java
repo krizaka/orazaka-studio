@@ -4,7 +4,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * The exact result cache (sovkora-studio-service#61): the run that already answered the very same request.
+ * The exact result cache (sovkora-studio-service#61): the run that already answered the very same
+ * request.
  *
  * <p>The memory is the run row itself ({@code studio_run.input_fingerprint}): a result purged by
  * retention (ADR-065) is a result the cache no longer has, and a cached answer never outlives the

@@ -1,9 +1,9 @@
 package com.krizaka.sovkora.studio.client;
 
+import com.krizaka.security.token.ServiceTokenProvider;
 import com.krizaka.sovkora.studio.domain.port.StudioCatalogClient;
 import com.krizaka.sovkora.studio.domain.port.StudioRunClient;
 import com.krizaka.sovkora.studio.domain.port.TurnDeclarationClient;
-import com.krizaka.security.token.ServiceTokenProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;

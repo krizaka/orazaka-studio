@@ -1,12 +1,12 @@
 package com.krizaka.sovkora.studioservice.infrastructure.adapter.jobs;
 
+import com.krizaka.security.jwt.SessionJwtProperties;
+import com.krizaka.security.token.ServiceTokenProvider;
 import com.krizaka.sovkora.studioservice.domain.exception.AgentTurnRefusedException;
 import com.krizaka.sovkora.studioservice.domain.model.AgentTurn;
 import com.krizaka.sovkora.studioservice.domain.model.AgentTurnResult;
 import com.krizaka.sovkora.studioservice.domain.port.AgentTurnClient;
 import com.krizaka.sovkora.studioservice.infrastructure.config.ConversationPlaneProperties;
-import com.krizaka.security.jwt.SessionJwtProperties;
-import com.krizaka.security.token.ServiceTokenProvider;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;

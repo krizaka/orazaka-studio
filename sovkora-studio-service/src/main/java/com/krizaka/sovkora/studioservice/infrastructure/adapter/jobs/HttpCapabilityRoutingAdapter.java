@@ -1,11 +1,11 @@
 package com.krizaka.sovkora.studioservice.infrastructure.adapter.jobs;
 
+import com.krizaka.security.jwt.SessionJwtProperties;
+import com.krizaka.security.token.ServiceTokenProvider;
 import com.krizaka.sovkora.jobs.domain.model.CapabilityRoute;
 import com.krizaka.sovkora.jobs.domain.port.CapabilityRoutingClient;
 import com.krizaka.sovkora.studioservice.infrastructure.config.CapabilityRoutingProperties;
 import com.krizaka.sovkora.studioservice.infrastructure.support.CapabilityRouteCache;
-import com.krizaka.security.jwt.SessionJwtProperties;
-import com.krizaka.security.token.ServiceTokenProvider;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.Optional;

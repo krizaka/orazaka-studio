@@ -1,11 +1,11 @@
 package com.krizaka.sovkora.studioservice.infrastructure.adapter.jobs;
 
+import com.krizaka.security.jwt.SessionJwtProperties;
+import com.krizaka.security.token.ServiceTokenProvider;
 import com.krizaka.sovkora.jobs.domain.exception.CapabilityRegistrationException;
 import com.krizaka.sovkora.jobs.domain.model.CapabilityDeclaration;
 import com.krizaka.sovkora.jobs.domain.port.CapabilityRegistrationClient;
 import com.krizaka.sovkora.studioservice.infrastructure.config.CapabilityRoutingProperties;
-import com.krizaka.security.jwt.SessionJwtProperties;
-import com.krizaka.security.token.ServiceTokenProvider;
 import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

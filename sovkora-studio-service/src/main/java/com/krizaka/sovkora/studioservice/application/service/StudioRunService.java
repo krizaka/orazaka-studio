@@ -56,7 +56,9 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 public class StudioRunService {
 
-  /** The Studios whose identical runs answer from the recorded result (sovkora-studio-service#61). */
+  /**
+   * The Studios whose identical runs answer from the recorded result (sovkora-studio-service#61).
+   */
   static final String RESULT_CACHE_STUDIOS_KEY = "run.result-cache.studios";
 
   private static final String SELECT_RUN =
@@ -706,8 +708,8 @@ public class StudioRunService {
   }
 
   /**
-   * Answers a run that waits for input (sovkora-studio-service#115): the message becomes the output of the
-   * parked step, which then succeeds, and the run goes on.
+   * Answers a run that waits for input (sovkora-studio-service#115): the message becomes the output
+   * of the parked step, which then succeeds, and the run goes on.
    *
    * @param runId the parked run
    * @param actorId the opaque billable subject
@@ -732,8 +734,8 @@ public class StudioRunService {
   }
 
   /**
-   * Refuses the approval a run waits on (sovkora-studio-service#115): the run stops without the step, as a
-   * cancel does, and the hold is released.
+   * Refuses the approval a run waits on (sovkora-studio-service#115): the run stops without the
+   * step, as a cancel does, and the hold is released.
    *
    * @param runId the parked run
    * @param actorId the opaque billable subject

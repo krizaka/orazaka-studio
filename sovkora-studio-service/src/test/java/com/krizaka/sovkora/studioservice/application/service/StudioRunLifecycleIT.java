@@ -629,7 +629,8 @@ class StudioRunLifecycleIT {
     assertEquals(RunStatus.SUCCEEDED, runService.find(run.id(), ACTOR).orElseThrow().status());
   }
 
-  // ── sovkora-studio-service#77: a grounded step is held to the citation contract (ADR-087) ───────
+  // ── sovkora-studio-service#77: a grounded step is held to the citation contract (ADR-087)
+  // ───────
 
   /** One grounded-research step that declares no contract of its own; no retry. */
   private UUID installGroundedStudio(String studioKey) {
